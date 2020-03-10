@@ -1,0 +1,17 @@
+{
+  "name": "mysterio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "wrapper for t-sheets api",
+  "repository": "https://github.com/caseconsulting/mysterio",
+  "author": "Case Consulting",
+  "scripts": {
+    "test": "jasmine"
+  },
+  "dependencies": {
+    "axios": "^0.18.0"
+  },
+  "devDependencies": {
+    "jasmine": "^3.5.0"
+  }
+}
