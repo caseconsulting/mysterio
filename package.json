@@ -7,7 +7,7 @@
   "author": "Case Consulting",
   "scripts": {
     "build": "sam build -t CloudFormation.yaml",
-    "deploy": "sam deploy --template-file CloudFormation.yaml";
+    "deploy": "sam deploy --template-file CloudFormation.yaml",
     "local": "sam build -t CloudFormation.yaml && sam local invoke \"PTOBalancesFunction\" -e events/event.json",
     "test": "jasmine"
   },
