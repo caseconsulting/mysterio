@@ -12,6 +12,10 @@
     "test": "jasmine"
   },
   "dependencies": {
+    "axios": "^0.18.0",
     "lodash": "^4.17.15"
+  },
+  "devDependencies": {
+    "jasmine": "^3.5.0"
   }
 }

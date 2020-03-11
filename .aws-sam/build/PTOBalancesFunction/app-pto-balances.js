@@ -1,7 +1,5 @@
 const _ = require('lodash');
 
-// const axios = require('axios')
-// const url = 'http://checkip.amazonaws.com/';
 let response;
 
 function getTSheetData() {
@@ -217,10 +215,6 @@ function getTSheetData() {
    }
  };
 }
-
-// async function jobCodeToName(jobCode, jobCodesMap) {
-//   return {jobCodesMap[jobCode.id]: jobCode};
-// }
 
 async function start() {
   let userId = 1705972;
