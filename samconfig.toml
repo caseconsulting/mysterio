@@ -3,7 +3,7 @@ version = 0.1
 [default.deploy]
 [default.deploy.parameters]
 stack_name = "mysterio"
-s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-of56hkvz9asj"
+s3_bucket = "mysterio-aws-sam-cli"
 s3_prefix = "mysterio"
 region = "us-east-1"
 capabilities = "CAPABILITY_IAM"

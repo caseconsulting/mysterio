@@ -6,8 +6,12 @@
   "repository": "https://github.com/caseconsulting/mysterio",
   "author": "Case Consulting",
   "scripts": {
-    "test": "jasmine",
     "build": "sam build -t CloudFormation.yaml",
-    "invoke": "sam build -t CloudFormation.yaml && sam local invoke \"PTOBalancesFunction\" -e events/event.json"
+    "deploy": "sam deploy --template-file CloudFormation.yaml";
+    "local": "sam build -t CloudFormation.yaml && sam local invoke \"PTOBalancesFunction\" -e events/event.json",
+    "test": "jasmine"
+  },
+  "dependencies": {
+    "lodash": "^4.17.15"
   }
 }
