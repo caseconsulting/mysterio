@@ -6,10 +6,13 @@
   "repository": "https://github.com/caseconsulting/mysterio",
   "author": "Case Consulting",
   "scripts": {
-    "test": "jasmine"
+    "test": "jasmine",
+    "build": "sam build -t CloudFormation.yaml",
+    "invoke": "sam local invoke \"PTOBalancesFunction\" -e events/event.json"
   },
   "dependencies": {
-    "axios": "^0.18.0"
+    "axios": "^0.18.0",
+    "lodash": "^4.17.15"
   },
   "devDependencies": {
     "jasmine": "^3.5.0"

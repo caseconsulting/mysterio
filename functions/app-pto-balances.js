@@ -1,3 +1,5 @@
+const _ = require('lodash');
+
 // const axios = require('axios')
 // const url = 'http://checkip.amazonaws.com/';
 let response;
@@ -216,13 +218,30 @@ function getTSheetData() {
  };
 }
 
+// async function jobCodeToName(jobCode, jobCodesMap) {
+//   return {jobCodesMap[jobCode.id]: jobCode};
+// }
+
 async function start() {
   let userId = 1705972;
   let tSheetData = getTSheetData();
 
   let filteredData = tSheetData;
+
+  // create a job-name map from job code to job name
+  let jobCodesMap = _.cloneDeep(tSheetData.supplemental_data.jobcodes);
+  _.each(jobCodesMap, jobCode => {jobCodesMap[jobCode.id] = jobCode.name});
+
+  // translate balances code with the code-name map
+  let ptoBalancesCode = tSheetData.results.users[userId].pto_balances;
+  let ptoBalancesName = {};
+
+  _.each(ptoBalancesCode, (value, code) => {
+    ptoBalancesName[jobCodesMap[code]] = value;
+  });
+
   filteredData.results.users[userId] = {
-    pto_balances: tSheetData.results.users[userId].pto_balances
+    pto_balances: ptoBalancesName
   };
 
   return filteredData;
