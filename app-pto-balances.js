@@ -219,38 +219,42 @@ function getTSheetData() {
 // INCLUDE THE ACCESS TOKEN HERE
 var accessToken = '';
 
+//employee numbers to filter tsheets api query on
+var employeeNumbers = [10008]; //10020
+
 var options = {
   method: 'GET',
   url: 'https://rest.tsheets.com/api/v1/users',
+  qs: {
+    employee_numbers: employeeNumbers
+  },
   headers: {
     'Authorization': `Bearer ${accessToken}`
   }
 };
 
 async function start() {
-  let userId = 1705972;
-
   // make request to tsheet api
   //let tSheetData = JSON.parse(await rp(options));
   let tSheetData = getTSheetData(); // use this dataset while token is not protected
-
-  tSheetData.results.users = {[userId]: tSheetData.results.users[userId]};
 
   // create a map from job code to job name
   let jobCodesMap = _.cloneDeep(tSheetData.supplemental_data.jobcodes);
   _.each(jobCodesMap, jobCode => {jobCodesMap[jobCode.id] = jobCode.name});
 
   // translate balances code with the code-name map
-  let ptoBalancesCode = tSheetData.results.users[userId].pto_balances;
-  let ptoBalancesName = {};
+  _.each(tSheetData.results.users, user => {
+    let ptoBalancesCode = user.pto_balances;
+    let ptoBalancesName = {};
 
-  _.each(ptoBalancesCode, (value, code) => {
-    ptoBalancesName[jobCodesMap[code]] = value;
+    _.each(ptoBalancesCode, (value, code) => {
+      ptoBalancesName[jobCodesMap[code]] = value;
+    });
+
+    tSheetData.results.users[user.id] = {
+      pto_balances: ptoBalancesName
+    };
   });
-
-  tSheetData.results.users[userId] = {
-    pto_balances: ptoBalancesName
-  };
 
   // return the filtered dataset
   return tSheetData;
