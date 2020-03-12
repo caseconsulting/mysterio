@@ -12,3 +12,4 @@ coverage
 claudia.json
 packaged.yaml
 .aws-sam
+tsheets-access-token.*
