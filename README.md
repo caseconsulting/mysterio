@@ -25,9 +25,17 @@ Using the AWS Systems Manager (SSM) Console create a new parameter
 8) Add Tag - Tag key: 'Application' - Tag value: 'mysterio'
 9) Create parameter
 
+Deploy mysterio SAM application
 
-Deploy
+```
+npm run deploy
+```
 
+Using the KMS console, provide permissions for the lambda function role to use the CMK
+1) TSheets
+2) Key users - Add
+3) Check mysterio-app-PTOBalancesFunctionRole-SY920ABW6CGM
+4) Add
 
 In the API Gateway console
 1) Select the API
