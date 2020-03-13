@@ -8,7 +8,7 @@
     "foo": "bar"
   },
   "pathParameters": {
-    "proxy": "/path/to/resource"
+    "employeeNumber": "10008"
   },
   "stageVariables": {
     "baz": "qux"

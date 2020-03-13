@@ -232,11 +232,13 @@ async function getSecret(secretName) {
   return result.Parameter.Value;
 };
 
-async function start() {
-  var accessToken = getSecret('/dev/PTOBalances/appSecrets');
+async function start(event) {
+  var accessToken = getSecret('/TSheets/accessToken');
 
   //employee numbers to filter tsheets api query on
-  var employeeNumbers = [10008]; //10020
+  //var employeeNumbers = [10008]; //10020
+  var employeeNumbers = event.pathParameters.employeeNumber;
+  console.log(JSON.stringify(event.pathParameters));
 
   var options = {
     method: 'GET',
@@ -249,7 +251,6 @@ async function start() {
     }
   };
 
-  return accessToken;
   // make request to tsheet api
   //let tSheetData = JSON.parse(await rp(options));
   let tSheetData = getTSheetData(); // use this dataset while token is not protected
@@ -280,7 +281,7 @@ async function start() {
  * lambda handler start point
  */
 async function lambdaHandler(event, context) {
-  return start();
+  return start(event);
 }
 
 module.exports = { lambdaHandler };

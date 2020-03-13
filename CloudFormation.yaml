@@ -10,65 +10,10 @@ Parameters:
     Type: String
     Default: alam
 Resources:
-  PTOBalancesEncryptionKey:
-    Properties:
-      Description: Encryption key for secret config values for the PTO Balances TSheets Access Token
-      EnableKeyRotation: false
-      Enabled: true
-      KeyPolicy:
-        Id: key-default-1
-        Statement:
-        - Action:
-          - kms:Create*
-          - kms:Encrypt
-          - kms:Describe*
-          - kms:Enable*
-          - kms:List*
-          - kms:Put*
-          - kms:Update*
-          - kms:Revoke*
-          - kms:Disable*
-          - kms:Get*
-          - kms:Delete*
-          - kms:ScheduleKeyDeletion
-          - kms:CancelKeyDeletion
-          Effect: Allow
-          Principal:
-            AWS:
-            - Fn::Sub: arn:aws:iam::${AWS::AccountId}:user/${IAMUsername}
-          Resource: '*'
-          Sid: Allow administration of the key & encryption of new values
-        - Action:
-          - kms:Encrypt
-          - kms:Decrypt
-          - kms:ReEncrypt*
-          - kms:GenerateDataKey*
-          - kms:DescribeKey
-          Effect: Allow
-          Principal:
-            AWS:
-              Fn::GetAtt:
-              - PTOBalancesFunctionRole
-              - Arn
-          Resource: '*'
-          Sid: Allow use of the key
-        Version: '2012-10-17'
-    Type: AWS::KMS::Key
-  PTOBalancesEncryptionKeyAlias:
-    Properties:
-      AliasName: alias/PTOBalancesKey
-      TargetKeyId:
-        Ref: PTOBalancesEncryptionKey
-    Type: AWS::KMS::Alias
   PTOBalancesFunction:
     Properties:
       CodeUri: ./
       Description: AWS Lambda Function used as a wrapper for a tsheet api request
-      Environment:
-        Variables:
-          APP_CONFIG_PATH: PTOBalances
-          AWS_XRAY_TRACING_NAME: PTOBalancesFunction
-          ENV: dev
       FunctionName: PTOBalancesFunction
       Handler: app-pto-balances.lambdaHandler
       Role:
@@ -77,12 +22,11 @@ Resources:
         - Arn
       Runtime: nodejs12.x
       Timeout: 30
-      Tracing: Active
       Events:
         PTOBalances:
           Type: Api
           Properties:
-            Path: /pto-balances
+            Path: /pto-balances/{employeeNumber}
             Method: get
     Type: AWS::Serverless::Function
   PTOBalancesFunctionRole:
@@ -103,7 +47,7 @@ Resources:
             - ssm:GetParameter*
             Effect: Allow
             Resource:
-              Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/dev/PTOBalances*
+              Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
           Version: '2012-10-17'
         PolicyName: PTOBalancesParameterAccess
       - PolicyDocument:
@@ -116,28 +60,19 @@ Resources:
             Resource: '*'
           Version: '2012-10-17'
         PolicyName: PTOBalancesLambdaBasicExecution
-      - PolicyDocument:
-          Statement:
-          - Action:
-            - xray:PutTraceSegments
-            - xray:PutTelemetryRecords
-            Effect: Allow
-            Resource: '*'
-          Version: '2012-10-17'
-        PolicyName: PTOBalancesXRayAccess
     Type: AWS::IAM::Role
 Transform: AWS::Serverless-2016-10-31
 
-# Outputs:
-#   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
-#   # Find out more about other implicit resources you can reference within SAM
-#   # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
-#   PTOBalancesApi:
-#     Description: "API Gateway endpoint URL for Dev stage for PTO Balances function"
-#     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/pto-balances/"
-#   PTOBalancesFunction:
-#     Description: "PTO Balances Lambda Function ARN"
-#     Value: !GetAtt PTOBalancesFunction.Arn
-#   PTOBalancesFunctionIamRole:
-#     Description: "Implicit IAM Role created for PTO Balances function"
-#     Value: !GetAtt PTOBalancesFunctionRole.Arn
+Outputs:
+  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+  # Find out more about other implicit resources you can reference within SAM
+  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  PTOBalancesApi:
+    Description: "API Gateway endpoint URL for Prod stage for PTO Balances function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/pto-balances/"
+  PTOBalancesFunction:
+    Description: "PTO Balances Lambda Function ARN"
+    Value: !GetAtt PTOBalancesFunction.Arn
+  PTOBalancesFunctionIamRole:
+    Description: "Implicit IAM Role created for PTO Balances function"
+    Value: !GetAtt PTOBalancesFunctionRole.Arn
