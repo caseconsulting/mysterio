@@ -3,6 +3,9 @@ const rp = require('request-promise');
 const _ = require('lodash');
 const ssm = require('./aws-client');
 
+/*
+ * Sample dataset from TSheet API
+ */
 function getTSheetData() {
   return {
    "results": {
@@ -217,9 +220,6 @@ function getTSheetData() {
  };
 }
 
-
-// Get the Access Token for T-Sheets API
-
 /*
  * Access system manager parameter store and return secret value of the given name.
  */
@@ -232,14 +232,24 @@ async function getSecret(secretName) {
   return result.Parameter.Value;
 };
 
+/*
+ * Converts seconds to hours to the lower bound 2 decimal place.
+ */
+function secondsToHours(value) {
+  return Math.floor(parseInt(value) / 36) / 100;
+}
+
+/*
+ * Begin execution of PTOBalance Lambda Function
+ */
 async function start(event) {
-  var accessToken = getSecret('/TSheets/accessToken');
+  // get access token from parameter store
+  var accessToken = await getSecret('/TSheets/accessToken');
 
-  //employee numbers to filter tsheets api query on
-  //var employeeNumbers = [10008]; //10020
-  var employeeNumbers = event.pathParameters.employeeNumber;
-  console.log(JSON.stringify(event.pathParameters));
+  // employee numbers to filter tsheets api query on
+  var employeeNumbers = event.pathParameters.employeeNumber; // 10008 10020
 
+  // set options for TSheet API call
   var options = {
     method: 'GET',
     url: 'https://rest.tsheets.com/api/v1/users',
@@ -251,9 +261,8 @@ async function start(event) {
     }
   };
 
-  // make request to tsheet api
-  //let tSheetData = JSON.parse(await rp(options));
-  let tSheetData = getTSheetData(); // use this dataset while token is not protected
+  // request data from TSheet API
+  let tSheetData = JSON.parse(await rp(options));
 
   // create a map from job code to job name
   let jobCodesMap = _.cloneDeep(tSheetData.supplemental_data.jobcodes);
@@ -265,7 +274,8 @@ async function start(event) {
     let ptoBalancesName = {};
 
     _.each(ptoBalancesCode, (value, code) => {
-      ptoBalancesName[jobCodesMap[code]] = value;
+      // set job code name and convert value from seconds to hours
+      ptoBalancesName[jobCodesMap[code]] = secondsToHours(value);
     });
 
     tSheetData.results.users[user.id] = {
@@ -273,8 +283,11 @@ async function start(event) {
     };
   });
 
-  // return the filtered dataset
-  return tSheetData;
+  // return the filtered dataset response
+  return {
+    'statusCode': 200,
+    'body': JSON.stringify(tSheetData)
+  }
 }
 
 /**

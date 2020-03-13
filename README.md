@@ -24,3 +24,13 @@ Using the AWS Systems Manager (SSM) Console create a new parameter
 7) Value: <TSheets Access Token>
 8) Add Tag - Tag key: 'Application' - Tag value: 'mysterio'
 9) Create parameter
+
+
+Deploy
+
+
+In the API Gateway console
+1) Select the API
+2) Settings
+3) Change Endpoint Type to Regional
+4) Save Changes
