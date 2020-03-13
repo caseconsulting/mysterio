@@ -2,8 +2,9 @@ version = 0.1
 [default]
 [default.deploy]
 [default.deploy.parameters]
-stack_name = "mysterio"
-s3_bucket = "mysterio-aws-sam-cli"
-s3_prefix = "mysterio"
+stack_name = "mysterio-app"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-8ph8s33f7nl5"
+s3_prefix = "mysterio-app"
 region = "us-east-1"
 capabilities = "CAPABILITY_IAM"
+parameter_overrides = "IAMUsername=\"alam\""

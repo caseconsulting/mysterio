@@ -13,6 +13,7 @@
   "stageVariables": {
     "baz": "qux"
   },
+  "employee_number": "123456789",
   "headers": {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Accept-Encoding": "gzip, deflate, sdch",
@@ -36,7 +37,7 @@
   "requestContext": {
     "accountId": "123456789012",
     "resourceId": "123456",
-    "stage": "prod",
+    "stage": "dev",
     "requestId": "c6af9ac6-7b61-11e6-9a41-93e8deadbeef",
     "requestTime": "09/Apr/2015:12:34:56 +0000",
     "requestTimeEpoch": 1428582896000,
@@ -53,7 +54,7 @@
       "userAgent": "Custom User Agent String",
       "user": null
     },
-    "path": "/prod/path/to/resource",
+    "path": "/dev/path/to/resource",
     "resourcePath": "/{proxy+}",
     "httpMethod": "POST",
     "apiId": "1234567890",

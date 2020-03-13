@@ -1,6 +1,7 @@
 const request = require("request");
 const rp = require('request-promise');
 const _ = require('lodash');
+const ssm = require('./aws-client');
 
 function getTSheetData() {
   return {
@@ -216,24 +217,39 @@ function getTSheetData() {
  };
 }
 
-// INCLUDE THE ACCESS TOKEN HERE
-var accessToken = '';
 
-//employee numbers to filter tsheets api query on
-var employeeNumbers = [10008]; //10020
+// Get the Access Token for T-Sheets API
 
-var options = {
-  method: 'GET',
-  url: 'https://rest.tsheets.com/api/v1/users',
-  qs: {
-    employee_numbers: employeeNumbers
-  },
-  headers: {
-    'Authorization': `Bearer ${accessToken}`
-  }
+/*
+ * Access system manager parameter store and return secret value of the given name.
+ */
+async function getSecret(secretName) {
+  const params = {
+    Name: secretName,
+    WithDecryption: true
+  };
+  const result = await ssm.getParameter(params).promise();
+  return result.Parameter.Value;
 };
 
 async function start() {
+  var accessToken = getSecret('/dev/PTOBalances/appSecrets');
+
+  //employee numbers to filter tsheets api query on
+  var employeeNumbers = [10008]; //10020
+
+  var options = {
+    method: 'GET',
+    url: 'https://rest.tsheets.com/api/v1/users',
+    qs: {
+      employee_numbers: employeeNumbers
+    },
+    headers: {
+      'Authorization': `Bearer ${accessToken}`
+    }
+  };
+
+  return accessToken;
   // make request to tsheet api
   //let tSheetData = JSON.parse(await rp(options));
   let tSheetData = getTSheetData(); // use this dataset while token is not protected
@@ -261,16 +277,7 @@ async function start() {
 }
 
 /**
- *
- * Event doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-input-format
- * @param {Object} event - API Gateway Lambda Proxy Input Format
- *
- * Context doc: https://docs.aws.amazon.com/lambda/latest/dg/nodejs-prog-model-context.html
- * @param {Object} context
- *
- * Return doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html
- * @returns {Object} object - API Gateway Lambda Proxy Output Format
- *
+ * lambda handler start point
  */
 async function lambdaHandler(event, context) {
   return start();
