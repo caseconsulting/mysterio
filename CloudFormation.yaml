@@ -9,6 +9,10 @@ Parameters:
       we create. This user will be able to encrypt values and manage the key.
     Type: String
     Default: alam
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Api:
+    EndpointConfiguration: REGIONAL
 Resources:
   PTOBalancesFunction:
     Properties:
