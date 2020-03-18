@@ -2,7 +2,7 @@
   "name": "mysterio",
   "version": "1.0.0",
   "private": true,
-  "description": "wrapper for t-sheets api",
+  "description": "Facade for external APIs",
   "repository": "https://github.com/caseconsulting/mysterio",
   "author": "Case Consulting",
   "scripts": {
@@ -12,7 +12,7 @@
     "test": "jasmine"
   },
   "dependencies": {
-    "aws-sdk": "^2.639.0",
+    "aws-sdk": "^2.641.0",
     "axios": "^0.19.2",
     "lodash": "^4.17.15",
     "request": "^2.88.2",
