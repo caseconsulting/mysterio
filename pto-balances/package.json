@@ -8,8 +8,6 @@
   "dependencies": {
     "aws-sdk": "^2.641.0",
     "axios": "^0.19.2",
-    "lodash": "^4.17.15",
-    "request": "^2.88.2",
-    "request-promise": "^4.2.5"
+    "lodash": "^4.17.15"
   }
 }
