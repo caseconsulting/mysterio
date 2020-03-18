@@ -221,6 +221,7 @@ async function start(event) {
 
   // employee numbers to filter tsheets api query on
   var employeeNumbers = event.pathParameters.employeeNumber; // 10008 10020
+  console.info('Obtaining PTO balances for employee #', employeeNumbers);
 
   // set options for TSheet API call
   var options = {
@@ -236,6 +237,7 @@ async function start(event) {
 
   // request data from TSheet API
   let tSheetData = JSON.parse(await rp(options));
+  console.info('Retrieved TSheets data');
 
   // create a map from job code to job name
   let jobCodesMap = _.cloneDeep(tSheetData.supplemental_data.jobcodes);
@@ -244,6 +246,7 @@ async function start(event) {
   });
 
   // translate balances code with the code-name map
+  console.info('Translating TSheets data');
   _.each(tSheetData.results.users, user => {
     let ptoBalancesCode = user.pto_balances;
     let ptoBalancesName = {};
@@ -259,6 +262,7 @@ async function start(event) {
   });
 
   // return the filtered dataset response
+  console.info('Returning TSheets data');
   return {
     statusCode: 200,
     body: JSON.stringify(tSheetData)
