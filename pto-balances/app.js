@@ -1,4 +1,4 @@
-const rp = require('request-promise');
+const axios = require('axios');
 const _ = require('lodash');
 const ssm = require('./aws-client');
 
@@ -227,7 +227,7 @@ async function start(event) {
   var options = {
     method: 'GET',
     url: 'https://rest.tsheets.com/api/v1/users',
-    qs: {
+    params: {
       employee_numbers: employeeNumbers
     },
     headers: {
@@ -236,7 +236,8 @@ async function start(event) {
   };
 
   // request data from TSheet API
-  let tSheetData = JSON.parse(await rp(options));
+  let tSheetsResponse = await axios(options);
+  let tSheetData = tSheetsResponse.data;
   console.info('Retrieved TSheets data');
 
   // create a map from job code to job name
