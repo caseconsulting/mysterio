@@ -6,35 +6,52 @@ Description: >
   Facade for external APIs
 
 Parameters:
-  IAMUsername:
-    Description: Name of the IAM user who will be the administrator of the KMS key
-      we create. This user will be able to encrypt values and manage the key.
+  Stage:
     Type: String
-    Default: alam
+    Description: Deployment environment (e.g., dev, test, or prod)
+    AllowedValues:
+      - dev
+      - test
+      - prod
 
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
   Api:
+    # API Gateway endpoint type: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-apigateway-restapi-endpointconfiguration.html
     EndpointConfiguration: REGIONAL
+
+    # API Gateway access logging: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-apigateway-stage-accesslogsetting.html
+    AccessLogSetting:
+      DestinationArn: !Sub
+        - arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/apigateway/mysterio-${stageName}:*
+        - stageName: !Ref Stage
+      Format: $context.identity.sourceIp $context.identity.caller $context.identity.user [$context.requestTime] "$context.httpMethod $context.resourcePath $context.protocol" $context.status $context.responseLength $context.requestId
+
+    # API Gateway authorization: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-controlling-access-to-apis.html
+    #                            https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-api-apiauth.html
     Auth:
       DefaultAuthorizer: AWS_IAM
       InvokeRole: CALLER_CREDENTIALS # default, can specify other role or NONE
+
   Function:
     Tags:
       Application: mysterio
+      Stage: !Ref Stage
+    Environment:
+      Variables:
+        STAGE: !Ref Stage
 
 Resources:
   PTOBalancesFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
-      CodeUri: ./
-      Description: AWS Lambda Function used as a wrapper for a tsheet api request
-      FunctionName: PTOBalancesFunction
-      Handler: app-pto-balances.lambdaHandler
-      Role:
-        Fn::GetAtt:
-          - PTOBalancesFunctionRole
-          - Arn
+      FunctionName: !Join
+        - ''
+        - - mysterio-pto-balances-
+          - !Ref Stage
+      CodeUri: pto-balances/
+      Description: Retrieves PTO balances from TSheets API for given user
+      Handler: app.handler
       Runtime: nodejs12.x
       Timeout: 30
       Events:
@@ -43,45 +60,43 @@ Resources:
           Properties:
             Path: /pto-balances/{employeeNumber}
             Method: get
-  PTOBalancesFunctionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Statement:
-          - Action:
-              - sts:AssumeRole
-            Effect: Allow
-            Principal:
-              Service:
-                - lambda.amazonaws.com
-        Version: '2012-10-17'
       Policies:
-        - PolicyDocument:
-            Statement:
-              - Action:
-                  - ssm:GetParameter*
-                Effect: Allow
-                Resource:
-                  Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
-            Version: '2012-10-17'
-          PolicyName: PTOBalancesParameterAccess
-        - PolicyDocument:
-            Statement:
-              - Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Effect: Allow
-                Resource: '*'
-            Version: '2012-10-17'
-          PolicyName: PTOBalancesLambdaBasicExecution
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource:
+                Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
+  PTOBalancesFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - PTOBalancesFunction
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${PTOBalancesFunction}
+      RetentionInDays: 30
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - PTOBalancesFunction
+    Properties:
+      LogGroupName: !Sub
+        - /aws/apigateway/mysterio-${stageName}
+        - stageName: !Ref Stage
+      RetentionInDays: 30
 
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
   # Find out more about other implicit resources you can reference within SAM
   # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
   PTOBalancesApi:
-    Description: 'API Gateway endpoint URL for Prod stage for PTO Balances function'
+    Description: 'API Gateway endpoint URL for Prod stage'
     Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/pto-balances/'
   PTOBalancesFunction:
     Description: 'PTO Balances Lambda Function ARN'
