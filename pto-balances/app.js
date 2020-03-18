@@ -1,4 +1,3 @@
-const request = require('request');
 const rp = require('request-promise');
 const _ = require('lodash');
 const ssm = require('./aws-client');
