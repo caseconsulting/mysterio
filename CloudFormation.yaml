@@ -1,20 +1,31 @@
 AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
 Description: >
   mysterio
 
-  SAM Template for mysterio
+  Facade for external APIs
+
 Parameters:
   IAMUsername:
     Description: Name of the IAM user who will be the administrator of the KMS key
       we create. This user will be able to encrypt values and manage the key.
     Type: String
     Default: alam
+
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
   Api:
     EndpointConfiguration: REGIONAL
+    Auth:
+      DefaultAuthorizer: AWS_IAM
+      InvokeRole: CALLER_CREDENTIALS # default, can specify other role or NONE
+  Function:
+    Tags:
+      Application: mysterio
+
 Resources:
   PTOBalancesFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
       CodeUri: ./
       Description: AWS Lambda Function used as a wrapper for a tsheet api request
@@ -28,12 +39,12 @@ Resources:
       Timeout: 30
       Events:
         PTOBalances:
-          Type: Api
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
           Properties:
             Path: /pto-balances/{employeeNumber}
             Method: get
-    Type: AWS::Serverless::Function
   PTOBalancesFunctionRole:
+    Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
         Statement:
@@ -64,8 +75,6 @@ Resources:
                 Resource: '*'
             Version: '2012-10-17'
           PolicyName: PTOBalancesLambdaBasicExecution
-    Type: AWS::IAM::Role
-Transform: AWS::Serverless-2016-10-31
 
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
