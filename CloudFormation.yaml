@@ -42,8 +42,35 @@ Globals:
         STAGE: !Ref Stage
 
 Resources:
+  APIInvokeRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Join
+        - ''
+        - - mysterio-api-invoke-
+          - !Ref Stage
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: InvokeAPI
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'execute-api:Invoke'
+                Resource: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:*:*
   PTOBalancesFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    DependsOn:
+      - APIInvokeRole
     Properties:
       FunctionName: !Join
         - ''
@@ -60,13 +87,14 @@ Resources:
           Properties:
             Path: /pto-balances/{employeeNumber}
             Method: get
+            Auth:
+              InvokeRole: !GetAtt APIInvokeRole.Arn
       Policies:
         - Statement:
             - Action:
                 - ssm:GetParameter*
               Effect: Allow
-              Resource:
-                Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
         - Statement:
             - Action:
                 - logs:CreateLogGroup
