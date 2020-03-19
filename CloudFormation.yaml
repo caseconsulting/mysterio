@@ -43,7 +43,7 @@ Globals:
 
 Resources:
   APIInvokeRole:
-    Type: 'AWS::IAM::Role'
+    Type: AWS::IAM::Role
     Properties:
       RoleName: !Join
         - ''
@@ -67,6 +67,11 @@ Resources:
               - Effect: Allow
                 Action: 'execute-api:Invoke'
                 Resource: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:*:*
+      Tags:
+        - Key: Application
+          Value: mysterio
+        - Key: Stage
+          Value: !Ref Stage
   PTOBalancesFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     DependsOn:
