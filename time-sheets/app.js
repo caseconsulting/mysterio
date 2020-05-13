@@ -37,6 +37,8 @@ async function start(event) {
 
   console.info(`Obtaining time sheets for employees #${employeeNumbers} from ${startDate} to ${endDate}`);
 
+  console.info(`Getting user data`);
+
   // set userOptions for TSheet API call
   var userOptions = {
     method: 'GET',
@@ -53,6 +55,14 @@ async function start(event) {
   let employeeRequest = await axios(userOptions);
   let employeesData = employeeRequest.data.results.users;
 
+  // create a map from job code to job name
+  let ptoJobCodeMap = _.mapValues(employeeRequest.data.supplemental_data.jobcodes, jobCode => {
+    return jobCode.name;
+  });
+
+  console.info(`Getting job code data`);
+
+  // set jobCodeOptions for TSheet API call
   var jobCodeOptions = {
     method: 'GET',
     url: 'https://rest.tsheets.com/api/v1/jobcodes',
@@ -70,6 +80,8 @@ async function start(event) {
     return jobCode.name;
   });
 
+  jobCodesMap = _.merge(jobCodesMap, ptoJobCodeMap);
+
   // get employee id and employee_number
   let employees = _.map(employeesData, e => {
     return {id: e.id, employee_number: e.employee_number};
@@ -81,7 +93,7 @@ async function start(event) {
   let i; // loop index
   for(i = 0; i < employees.length; i++) {
 
-    console.info(`Getting time sheets for employee ${employees[i].employee_number} with userId ${employees[i].id}`);
+    console.info(`Getting time sheet data for employee ${employees[i].employee_number} with userId ${employees[i].id}`);
 
     // set timeSheetOptions for TSheet API call
     var timeSheetOptions = {
