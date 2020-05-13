@@ -53,6 +53,23 @@ async function start(event) {
   let employeeRequest = await axios(userOptions);
   let employeesData = employeeRequest.data.results.users;
 
+  var jobCodeOptions = {
+    method: 'GET',
+    url: 'https://rest.tsheets.com/api/v1/jobcodes',
+    headers: {
+     Authorization: `Bearer ${accessToken}`
+    }
+  };
+
+  // request job code data from TSheet API
+  let jobCodeRequest = await axios(jobCodeOptions);
+  let jobCodeData = jobCodeRequest.data.results.jobcodes;
+
+  // create a map from job code to job name
+  let jobCodesMap = _.mapValues(jobCodeData, jobCode => {
+    return jobCode.name;
+  });
+
   // get employee id and employee_number
   let employees = _.map(employeesData, e => {
     return {id: e.id, employee_number: e.employee_number};
@@ -93,6 +110,7 @@ async function start(event) {
 
     _.forEach(timeSheets, timesheet => {
       timesheet.duration = secondsToHours(timesheet.duration); // convert duration from seconds to hours
+      timesheet.jobcode = jobCodesMap[timesheet.jobcode_id];
       allTimeSheets.push(timesheet); // add to array of all time sheets
     });
   }
