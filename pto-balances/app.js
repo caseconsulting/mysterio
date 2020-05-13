@@ -241,9 +241,8 @@ async function start(event) {
   console.info('Retrieved TSheets data');
 
   // create a map from job code to job name
-  let jobCodesMap = _.cloneDeep(tSheetData.supplemental_data.jobcodes);
-  _.each(jobCodesMap, jobCode => {
-    jobCodesMap[jobCode.id] = jobCode.name;
+  let jobCodesMap = _.mapValues(tSheetData.supplemental_data.jobcodes, jobCode => {
+    return jobCode.name;
   });
 
   // translate balances code with the code-name map
