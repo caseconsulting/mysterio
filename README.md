@@ -38,7 +38,8 @@ Using the KMS console, provide permissions for the lambda function role to use t
 1. TSheets
 2. Key users - Add
 3. Check mysterio-app-PTOBalancesFunctionRole-SY920ABW6CGM
-4. Add
+4. Check mysterio-dev-TimeSheetsFunctionRole-NOI0EK8L2UOZ
+5. Add
 
 In the API Gateway console
 

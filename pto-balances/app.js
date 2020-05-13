@@ -220,7 +220,7 @@ async function start(event) {
   var accessToken = await getSecret('/TSheets/accessToken');
 
   // employee numbers to filter tsheets api query on
-  var employeeNumbers = event.pathParameters.employeeNumber; // 10008 10020
+  var employeeNumbers = event.pathParameters.employeeNumber; // 10044 10020
   console.info('Obtaining PTO balances for employee #', employeeNumbers);
 
   // set options for TSheet API call

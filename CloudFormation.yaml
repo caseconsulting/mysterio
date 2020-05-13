@@ -123,6 +123,57 @@ Resources:
         - /aws/apigateway/mysterio-${stageName}
         - stageName: !Ref Stage
       RetentionInDays: 30
+  TimeSheetsFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    DependsOn:
+      - APIInvokeRole
+    Properties:
+      FunctionName: !Join
+        - ''
+        - - mysterio-time-sheets-
+          - !Ref Stage
+      CodeUri: time-sheets/
+      Description: Retrieves time sheets from TSheets API for given user between a date range
+      Handler: app.handler
+      Runtime: nodejs12.x
+      Timeout: 30
+      Events:
+        TimeSheets:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /time-sheets/{employeeNumber}/{startDate}/{endDate}
+            Method: get
+            Auth:
+              InvokeRole: !GetAtt APIInvokeRole.Arn
+      Policies:
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
+  TimeSheetsFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - TimeSheetsFunction
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${TimeSheetsFunction}
+      RetentionInDays: 30
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - TimeSheetsFunction
+    Properties:
+      LogGroupName: !Sub
+        - /aws/apigateway/mysterio-${stageName}
+        - stageName: !Ref Stage
+      RetentionInDays: 30
 
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
@@ -137,3 +188,12 @@ Outputs:
   PTOBalancesFunctionIamRole:
     Description: 'Implicit IAM Role created for PTO Balances function'
     Value: !GetAtt PTOBalancesFunctionRole.Arn
+  TimeSheetsApi:
+    Description: 'API Gateway endpoint URL for Prod stage'
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/time-sheets/'
+  TimeSheetsFunction:
+    Description: 'Time Sheets Lambda Function ARN'
+    Value: !GetAtt TimeSheetsFunction.Arn
+  TimeSheetsFunctionIamRole:
+    Description: 'Implicit IAM Role created for Time Sheets function'
+    Value: !GetAtt TimeSheetsFunctionRole.Arn
