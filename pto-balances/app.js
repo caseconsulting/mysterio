@@ -241,13 +241,13 @@ async function start(event) {
   console.info('Retrieved TSheets data');
 
   // create a map from job code to job name
-  let jobCodesMap = _.mapValues(tSheetData.supplemental_data.jobcodes, jobCode => {
+  let jobCodesMap = _.mapValues(tSheetData.supplemental_data.jobcodes, (jobCode) => {
     return jobCode.name;
   });
 
   // translate balances code with the code-name map
   console.info('Translating TSheets data');
-  _.each(tSheetData.results.users, user => {
+  _.each(tSheetData.results.users, (user) => {
     let ptoBalancesCode = user.pto_balances;
     let ptoBalancesName = {};
 
@@ -265,7 +265,15 @@ async function start(event) {
   console.info('Returning TSheets data');
   return {
     statusCode: 200,
-    body: JSON.stringify(tSheetData)
+    body: JSON.stringify(tSheetData),
+    headers: {
+      // This is ALSO required for CORS to work. When browsers issue cross origin requests, they make a
+      // preflight request (HTTP Options) which is responded automatically based on SAM configuration.
+      // But the actual HTTP request (GET/POST etc) also needs to contain the AllowOrigin header.
+      //
+      // NOTE: This value is *not* double quoted: ie. "'www.example.com'" is wrong
+      'Access-Control-Allow-Origin': 'https://app.consultwithcase.com'
+    }
   };
 }
 

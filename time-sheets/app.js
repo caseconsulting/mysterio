@@ -56,7 +56,7 @@ async function start(event) {
   let employeesData = employeeRequest.data.results.users;
 
   // create a map from job code to job name
-  let ptoJobCodeMap = _.mapValues(employeeRequest.data.supplemental_data.jobcodes, jobCode => {
+  let ptoJobCodeMap = _.mapValues(employeeRequest.data.supplemental_data.jobcodes, (jobCode) => {
     return jobCode.name;
   });
 
@@ -67,7 +67,7 @@ async function start(event) {
     method: 'GET',
     url: 'https://rest.tsheets.com/api/v1/jobcodes',
     headers: {
-     Authorization: `Bearer ${accessToken}`
+      Authorization: `Bearer ${accessToken}`
     }
   };
 
@@ -76,23 +76,22 @@ async function start(event) {
   let jobCodeData = jobCodeRequest.data.results.jobcodes;
 
   // create a map from job code to job name
-  let jobCodesMap = _.mapValues(jobCodeData, jobCode => {
+  let jobCodesMap = _.mapValues(jobCodeData, (jobCode) => {
     return jobCode.name;
   });
 
   jobCodesMap = _.merge(jobCodesMap, ptoJobCodeMap);
 
   // get employee id and employee_number
-  let employees = _.map(employeesData, e => {
-    return {id: e.id, employee_number: e.employee_number};
+  let employees = _.map(employeesData, (e) => {
+    return { id: e.id, employee_number: e.employee_number };
   });
 
   let allTimeSheets = [];
 
   // loop all employees
   let i; // loop index
-  for(i = 0; i < employees.length; i++) {
-
+  for (i = 0; i < employees.length; i++) {
     console.info(`Getting time sheet data for employee ${employees[i].employee_number} with userId ${employees[i].id}`);
 
     // set timeSheetOptions for TSheet API call
@@ -103,12 +102,11 @@ async function start(event) {
         user_ids: employees[i].id,
         start_date: startDate,
         end_date: endDate,
-        on_the_clock: 'both',
+        on_the_clock: 'both'
       },
-      headers:
-       {
-         'Authorization': `Bearer ${accessToken}`,
-       }
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
     };
 
     // request time sheets data from TSheet API
@@ -120,7 +118,7 @@ async function start(event) {
     // translate duration from seconds to hours
     console.info('Translating time sheet duration from seconds to hours');
 
-    _.forEach(timeSheets, timesheet => {
+    _.forEach(timeSheets, (timesheet) => {
       timesheet.duration = secondsToHours(timesheet.duration); // convert duration from seconds to hours
       timesheet.jobcode = jobCodesMap[timesheet.jobcode_id];
       allTimeSheets.push(timesheet); // add to array of all time sheets
@@ -132,7 +130,15 @@ async function start(event) {
 
   return {
     statusCode: 200,
-    body: JSON.stringify(allTimeSheets)
+    body: JSON.stringify(allTimeSheets),
+    headers: {
+      // This is ALSO required for CORS to work. When browsers issue cross origin requests, they make a
+      // preflight request (HTTP Options) which is responded automatically based on SAM configuration.
+      // But the actual HTTP request (GET/POST etc) also needs to contain the AllowOrigin header.
+      //
+      // NOTE: This value is *not* double quoted: ie. "'www.example.com'" is wrong
+      'Access-Control-Allow-Origin': 'https://app.consultwithcase.com'
+    }
   };
 }
 
