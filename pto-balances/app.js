@@ -222,13 +222,6 @@ async function start(event) {
   // employee numbers to filter tsheets api query on
   let employeeNumbers = event.employeeNumber; // 10044 10020
 
-  // if (employeeNumbers == 0) {
-  //   return {
-  //     statusCode: 400,
-  //     message: 'Invalid Request. Employee number cannot be 0.'
-  //   };
-  // }
-
   console.info('Obtaining PTO balances for employee #', employeeNumbers);
 
   // set options for TSheet API call
