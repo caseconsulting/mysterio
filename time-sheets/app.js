@@ -28,26 +28,19 @@ function secondsToHours(value) {
  */
 async function start(event) {
   // get access token from parameter store
-  var accessToken = await getSecret('/TSheets/accessToken');
+  let accessToken = await getSecret('/TSheets/accessToken');
 
   // variables to filter tsheets api query on
-  var employeeNumbers = event.employeeNumber; // 10044 10020
-  var startDate = event.startDate;
-  var endDate = event.endDate;
-
-  if (employeeNumbers == 0) {
-    return {
-      statusCode: 400,
-      message: 'Invalid Request. Employee number cannot be 0.'
-    };
-  }
+  let employeeNumbers = event.employeeNumber; // 10044 10020
+  let startDate = event.startDate;
+  let endDate = event.endDate;
 
   console.info(`Obtaining time sheets for employees #${employeeNumbers} from ${startDate} to ${endDate}`);
 
   console.info(`Getting user data`);
 
   // set userOptions for TSheet API call
-  var userOptions = {
+  let userOptions = {
     method: 'GET',
     url: 'https://rest.tsheets.com/api/v1/users',
     params: {
@@ -62,6 +55,11 @@ async function start(event) {
   let employeeRequest = await axios(userOptions);
   let employeesData = employeeRequest.data.results.users;
 
+  // create map from user id to employee number
+  let employeeNumberMap = _.mapValues(employeeRequest.data.results.users, (user) => {
+    return user.employee_number;
+  });
+
   // create a map from job code to job name
   let ptoJobCodeMap = _.mapValues(employeeRequest.data.supplemental_data.jobcodes, (jobCode) => {
     return jobCode.name;
@@ -70,7 +68,7 @@ async function start(event) {
   console.info(`Getting job code data`);
 
   // set jobCodeOptions for TSheet API call
-  var jobCodeOptions = {
+  let jobCodeOptions = {
     method: 'GET',
     url: 'https://rest.tsheets.com/api/v1/jobcodes',
     headers: {
@@ -102,7 +100,7 @@ async function start(event) {
     console.info(`Getting time sheet data for employee ${employees[i].employee_number} with userId ${employees[i].id}`);
 
     // set timeSheetOptions for TSheet API call
-    var timeSheetOptions = {
+    let timeSheetOptions = {
       method: 'GET',
       url: 'https://rest.tsheets.com/api/v1/timesheets',
       params: {
@@ -128,6 +126,7 @@ async function start(event) {
     _.forEach(timeSheets, (timesheet) => {
       timesheet.duration = secondsToHours(timesheet.duration); // convert duration from seconds to hours
       timesheet.jobcode = jobCodesMap[timesheet.jobcode_id];
+      timesheet.employee_number = employeeNumberMap[timesheet.user_id];
       allTimeSheets.push(timesheet); // add to array of all time sheets
     });
   }

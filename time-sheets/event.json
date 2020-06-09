@@ -7,11 +7,9 @@
   "queryStringParameters": {
     "foo": "bar"
   },
-  "pathParameters": {
-    "employeeNumber": "10044",
-    "startDate": "2020-03-01",
-    "endDate": "2020-03-31"
-  },
+  "employeeNumber": "10044",
+  "startDate": "2020-03-01",
+  "endDate": "2020-03-31",
   "stageVariables": {
     "baz": "qux"
   },

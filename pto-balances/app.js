@@ -222,12 +222,12 @@ async function start(event) {
   // employee numbers to filter tsheets api query on
   let employeeNumbers = event.employeeNumber; // 10044 10020
 
-  if (employeeNumbers == 0) {
-    return {
-      statusCode: 400,
-      message: 'Invalid Request. Employee number cannot be 0.'
-    };
-  }
+  // if (employeeNumbers == 0) {
+  //   return {
+  //     statusCode: 400,
+  //     message: 'Invalid Request. Employee number cannot be 0.'
+  //   };
+  // }
 
   console.info('Obtaining PTO balances for employee #', employeeNumbers);
 
@@ -246,6 +246,7 @@ async function start(event) {
   // request data from TSheet API
   let tSheetsResponse = await axios(options);
   let tSheetData = tSheetsResponse.data;
+
   console.info('Retrieved TSheets data');
 
   // create a map from job code to job name
@@ -255,6 +256,8 @@ async function start(event) {
 
   // translate balances code with the code-name map
   console.info('Translating TSheets data');
+  let newUserData = {};
+
   _.each(tSheetData.results.users, (user) => {
     let ptoBalancesCode = user.pto_balances;
     let ptoBalancesName = {};
@@ -264,10 +267,11 @@ async function start(event) {
       ptoBalancesName[jobCodesMap[code]] = secondsToHours(value);
     });
 
-    tSheetData.results.users[user.id] = {
+    newUserData[user.employee_number] = {
       pto_balances: ptoBalancesName
     };
   });
+  tSheetData.results.users = newUserData;
 
   // return the filtered dataset response
   console.info('Returning TSheets data');
