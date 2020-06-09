@@ -31,9 +31,16 @@ async function start(event) {
   var accessToken = await getSecret('/TSheets/accessToken');
 
   // variables to filter tsheets api query on
-  var employeeNumbers = event.pathParameters.employeeNumber; // 10044 10020
-  var startDate = event.pathParameters.startDate;
-  var endDate = event.pathParameters.endDate;
+  var employeeNumbers = event.employeeNumber; // 10044 10020
+  var startDate = event.startDate;
+  var endDate = event.endDate;
+
+  if (employeeNumbers == 0) {
+    return {
+      statusCode: 400,
+      message: 'Invalid Request. Employee number cannot be 0.'
+    };
+  }
 
   console.info(`Obtaining time sheets for employees #${employeeNumbers} from ${startDate} to ${endDate}`);
 
@@ -130,15 +137,7 @@ async function start(event) {
 
   return {
     statusCode: 200,
-    body: JSON.stringify(allTimeSheets),
-    headers: {
-      // This is ALSO required for CORS to work. When browsers issue cross origin requests, they make a
-      // preflight request (HTTP Options) which is responded automatically based on SAM configuration.
-      // But the actual HTTP request (GET/POST etc) also needs to contain the AllowOrigin header.
-      //
-      // NOTE: This value is *not* double quoted: ie. "'www.example.com'" is wrong
-      'Access-Control-Allow-Origin': 'https://app.consultwithcase.com'
-    }
+    body: allTimeSheets,
   };
 }
 

@@ -16,28 +16,28 @@ Parameters:
 
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
-  Api:
-    # API Gateway endpoint type: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-apigateway-restapi-endpointconfiguration.html
-    EndpointConfiguration: REGIONAL
-
-    # Cross Origin Resources Sharing (CORS): https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-api-corsconfiguration.html
-    Cors:
-      AllowMethods: "GET, OPTIONS"
-      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
-      AllowOrigin: "'*'"
-
-    # API Gateway access logging: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-apigateway-stage-accesslogsetting.html
-    AccessLogSetting:
-      DestinationArn: !Sub
-        - arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/apigateway/mysterio-${stageName}:*
-        - stageName: !Ref Stage
-      Format: $context.identity.sourceIp $context.identity.caller $context.identity.user [$context.requestTime] "$context.httpMethod $context.resourcePath $context.protocol" $context.status $context.responseLength $context.requestId
-
-    # API Gateway authorization: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-controlling-access-to-apis.html
-    #                            https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-api-apiauth.html
-    Auth:
-      DefaultAuthorizer: AWS_IAM
-      InvokeRole: CALLER_CREDENTIALS # default, can specify other role or NONE
+  # Api:
+  #   # API Gateway endpoint type: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-apigateway-restapi-endpointconfiguration.html
+  #   EndpointConfiguration: REGIONAL
+  #
+  #   # Cross Origin Resources Sharing (CORS): https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-api-corsconfiguration.html
+  #   # Cors:
+  #   #   AllowMethods: "GET, OPTIONS"
+  #   #   AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+  #   #   AllowOrigin: "'*'"
+  #
+  #   # API Gateway access logging: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-apigateway-stage-accesslogsetting.html
+  #   AccessLogSetting:
+  #     DestinationArn: !Sub
+  #       - arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/apigateway/mysterio-${stageName}:*
+  #       - stageName: !Ref Stage
+  #     Format: $context.identity.sourceIp $context.identity.caller $context.identity.user [$context.requestTime] "$context.httpMethod $context.resourcePath $context.protocol" $context.status $context.responseLength $context.requestId
+  #
+  #   # API Gateway authorization: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-controlling-access-to-apis.html
+  #   #                            https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-api-apiauth.html
+  #   Auth:
+  #     DefaultAuthorizer: AWS_IAM
+  #     InvokeRole: CALLER_CREDENTIALS # default, can specify other role or NONE
 
   Function:
     Tags:
@@ -48,40 +48,40 @@ Globals:
         STAGE: !Ref Stage
 
 Resources:
-  APIInvokeRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Join
-        - ''
-        - - mysterio-api-invoke-
-          - !Ref Stage
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - apigateway.amazonaws.com
-            Action:
-              - 'sts:AssumeRole'
-      Path: /
-      Policies:
-        - PolicyName: InvokeAPI
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action: 'execute-api:Invoke'
-                Resource: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:*:*
-      Tags:
-        - Key: Application
-          Value: mysterio
-        - Key: Stage
-          Value: !Ref Stage
+  # APIInvokeRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     RoleName: !Join
+  #       - ''
+  #       - - mysterio-api-invoke-
+  #         - !Ref Stage
+  #     AssumeRolePolicyDocument:
+  #       Version: 2012-10-17
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             Service:
+  #               - apigateway.amazonaws.com
+  #           Action:
+  #             - 'sts:AssumeRole'
+  #     Path: /
+  #     Policies:
+  #       - PolicyName: InvokeAPI
+  #         PolicyDocument:
+  #           Version: '2012-10-17'
+  #           Statement:
+  #             - Effect: Allow
+  #               Action: 'execute-api:Invoke'
+  #               Resource: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:*:*
+  #     Tags:
+  #       - Key: Application
+  #         Value: mysterio
+  #       - Key: Stage
+  #         Value: !Ref Stage
   PTOBalancesFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
-    DependsOn:
-      - APIInvokeRole
+    # DependsOn:
+    #   - APIInvokeRole
     Properties:
       FunctionName: !Join
         - ''
@@ -92,14 +92,14 @@ Resources:
       Handler: app.handler
       Runtime: nodejs12.x
       Timeout: 30
-      Events:
-        PTOBalances:
-          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
-          Properties:
-            Path: /pto-balances/{employeeNumber}
-            Method: get
-            Auth:
-              InvokeRole: !GetAtt APIInvokeRole.Arn
+      # Events:
+      #   PTOBalances:
+      #     Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+      #     Properties:
+      #       Path: /pto-balances/{employeeNumber}
+      #       Method: get
+      #       Auth:
+      #         InvokeRole: !GetAtt APIInvokeRole.Arn
       Policies:
         - Statement:
             - Action:
@@ -120,19 +120,19 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${PTOBalancesFunction}
       RetentionInDays: 30
-  ApiLogGroup:
-    Type: AWS::Logs::LogGroup
-    DependsOn:
-      - PTOBalancesFunction
-    Properties:
-      LogGroupName: !Sub
-        - /aws/apigateway/mysterio-${stageName}
-        - stageName: !Ref Stage
-      RetentionInDays: 30
+  # ApiLogGroup:
+  #   Type: AWS::Logs::LogGroup
+  #   DependsOn:
+  #     - PTOBalancesFunction
+  #   Properties:
+  #     LogGroupName: !Sub
+  #       - /aws/apigateway/mysterio-${stageName}
+  #       - stageName: !Ref Stage
+  #     RetentionInDays: 30
   TimeSheetsFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
-    DependsOn:
-      - APIInvokeRole
+    # DependsOn:
+    #   - APIInvokeRole
     Properties:
       FunctionName: !Join
         - ''
@@ -143,14 +143,14 @@ Resources:
       Handler: app.handler
       Runtime: nodejs12.x
       Timeout: 30
-      Events:
-        TimeSheets:
-          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
-          Properties:
-            Path: /time-sheets/{employeeNumber}/{startDate}/{endDate}
-            Method: get
-            Auth:
-              InvokeRole: !GetAtt APIInvokeRole.Arn
+      # Events:
+      #   TimeSheets:
+      #     Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+      #     Properties:
+      #       Path: /time-sheets/{employeeNumber}/{startDate}/{endDate}
+      #       Method: get
+      #       Auth:
+      #         InvokeRole: !GetAtt APIInvokeRole.Arn
       Policies:
         - Statement:
             - Action:
@@ -171,32 +171,32 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${TimeSheetsFunction}
       RetentionInDays: 30
-  ApiLogGroup:
-    Type: AWS::Logs::LogGroup
-    DependsOn:
-      - TimeSheetsFunction
-    Properties:
-      LogGroupName: !Sub
-        - /aws/apigateway/mysterio-${stageName}
-        - stageName: !Ref Stage
-      RetentionInDays: 30
+  # ApiLogGroup:
+  #   Type: AWS::Logs::LogGroup
+  #   DependsOn:
+  #     - TimeSheetsFunction
+  #   Properties:
+  #     LogGroupName: !Sub
+  #       - /aws/apigateway/mysterio-${stageName}
+  #       - stageName: !Ref Stage
+  #     RetentionInDays: 30
 
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
   # Find out more about other implicit resources you can reference within SAM
   # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
-  PTOBalancesApi:
-    Description: 'API Gateway endpoint URL for Prod stage'
-    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/pto-balances/'
+  # PTOBalancesApi:
+  #   Description: 'API Gateway endpoint URL for Prod stage'
+  #   Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/pto-balances/'
   PTOBalancesFunction:
     Description: 'PTO Balances Lambda Function ARN'
     Value: !GetAtt PTOBalancesFunction.Arn
   PTOBalancesFunctionIamRole:
     Description: 'Implicit IAM Role created for PTO Balances function'
     Value: !GetAtt PTOBalancesFunctionRole.Arn
-  TimeSheetsApi:
-    Description: 'API Gateway endpoint URL for Prod stage'
-    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/time-sheets/'
+  # TimeSheetsApi:
+  #   Description: 'API Gateway endpoint URL for Prod stage'
+  #   Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/time-sheets/'
   TimeSheetsFunction:
     Description: 'Time Sheets Lambda Function ARN'
     Value: !GetAtt TimeSheetsFunction.Arn
