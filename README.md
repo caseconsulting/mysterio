@@ -39,11 +39,12 @@ Using the KMS console, provide permissions for the lambda function role to use t
 2. Key users - Add
 3. Check mysterio-app-PTOBalancesFunctionRole-SY920ABW6CGM
 4. Check mysterio-dev-TimeSheetsFunctionRole-NOI0EK8L2UOZ
+5. Check mysterio-dev-JobcodesFunctionRole-B3UBOFJV1HOG
 5. Add
 
-In the API Gateway console
+<!-- In the API Gateway console
 
 1. Select the API
 2. Settings
 3. Change Endpoint Type to Regional
-4. Save Changes
+4. Save Changes -->

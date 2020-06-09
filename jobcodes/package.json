@@ -1,0 +1,13 @@
+{
+  "name": "jobcodes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Retrieves jobcodes from TSheets API",
+  "author": "Case Consulting",
+  "main": "app.js",
+  "dependencies": {
+    "aws-sdk": "^2.641.0",
+    "axios": "^0.19.2",
+    "lodash": "^4.17.15"
+  }
+}

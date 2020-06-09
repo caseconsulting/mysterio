@@ -180,6 +180,57 @@ Resources:
   #       - /aws/apigateway/mysterio-${stageName}
   #       - stageName: !Ref Stage
   #     RetentionInDays: 30
+  JobcodesFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    # DependsOn:
+    #   - APIInvokeRole
+    Properties:
+      FunctionName: !Join
+        - ''
+        - - mysterio-jobcodes-
+          - !Ref Stage
+      CodeUri: jobcodes/
+      Description: Retrieves jobcodes from TSheets API
+      Handler: app.handler
+      Runtime: nodejs12.x
+      Timeout: 30
+      # Events:
+      #   Jobcodes:
+      #     Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+      #     Properties:
+      #       Path: /jobcodes
+      #       Method: get
+      #       Auth:
+      #         InvokeRole: !GetAtt APIInvokeRole.Arn
+      Policies:
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
+  JobcodesFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - JobcodesFunction
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${JobcodesFunction}
+      RetentionInDays: 30
+  # ApiLogGroup:
+  #   Type: AWS::Logs::LogGroup
+  #   DependsOn:
+  #     - JobcodesFunction
+  #   Properties:
+  #     LogGroupName: !Sub
+  #       - /aws/apigateway/mysterio-${stageName}
+  #       - stageName: !Ref Stage
+  #     RetentionInDays: 30
 
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
@@ -203,3 +254,12 @@ Outputs:
   TimeSheetsFunctionIamRole:
     Description: 'Implicit IAM Role created for Time Sheets function'
     Value: !GetAtt TimeSheetsFunctionRole.Arn
+  # JobcodesApi:
+  #   Description: 'API Gateway endpoint URL for Prod stage'
+  #   Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/jobcodes/'
+  JobcodesFunction:
+    Description: 'Jobcodes Lambda Function ARN'
+    Value: !GetAtt JobcodesFunction.Arn
+  JobcodesFunctionIamRole:
+    Description: 'Implicit IAM Role created for Jobcodes function'
+    Value: !GetAtt JobcodesFunctionRole.Arn
