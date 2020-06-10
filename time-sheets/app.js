@@ -55,7 +55,7 @@ async function start(event) {
   let employeeRequest = await axios(userOptions);
   let employeesData = employeeRequest.data.results.users;
 
-  if (tSheetData.results.users.length == 0) {
+  if (employeesData == 0) {
     return {
       code: 404,
       message: `No users found with employee number ${employeeNumbers}`
@@ -63,7 +63,7 @@ async function start(event) {
   };
 
   // create map from user id to employee number
-  let employeeNumberMap = _.mapValues(employeeRequest.data.results.users, (user) => {
+  let employeeNumberMap = _.mapValues(employeesData, (user) => {
     return user.employee_number;
   });
 
