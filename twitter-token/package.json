@@ -1,0 +1,11 @@
+{
+  "name": "twitter-token",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Retrieves bearer access token for the Case Consulting Twitter account",
+  "author": "Case Consulting",
+  "main": "app.js",
+  "dependencies": {
+    "aws-sdk": "^2.641.0"
+  }
+}

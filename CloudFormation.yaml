@@ -182,8 +182,6 @@ Resources:
   #     RetentionInDays: 30
   JobcodesFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
-    # DependsOn:
-    #   - APIInvokeRole
     Properties:
       FunctionName: !Join
         - ''
@@ -194,14 +192,6 @@ Resources:
       Handler: app.handler
       Runtime: nodejs12.x
       Timeout: 30
-      # Events:
-      #   Jobcodes:
-      #     Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
-      #     Properties:
-      #       Path: /jobcodes
-      #       Method: get
-      #       Auth:
-      #         InvokeRole: !GetAtt APIInvokeRole.Arn
       Policies:
         - Statement:
             - Action:
@@ -222,15 +212,38 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${JobcodesFunction}
       RetentionInDays: 30
-  # ApiLogGroup:
-  #   Type: AWS::Logs::LogGroup
-  #   DependsOn:
-  #     - JobcodesFunction
-  #   Properties:
-  #     LogGroupName: !Sub
-  #       - /aws/apigateway/mysterio-${stageName}
-  #       - stageName: !Ref Stage
-  #     RetentionInDays: 30
+  TwitterTokenFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: !Join
+        - ''
+        - - mysterio-twitter-token-
+          - !Ref Stage
+      CodeUri: twitter-token/
+      Description: Retrieves bearer access token for the Case Consulting Twitter account
+      Handler: app.handler
+      Runtime: nodejs12.x
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/Twitter/accessToken
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
+  TwitterTokenFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - TwitterTokenFunction
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${TwitterTokenFunction}
+      RetentionInDays: 30
 
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
@@ -263,3 +276,9 @@ Outputs:
   JobcodesFunctionIamRole:
     Description: 'Implicit IAM Role created for Jobcodes function'
     Value: !GetAtt JobcodesFunctionRole.Arn
+  TwitterTokenFunction:
+    Description: 'Twitter Token Lambda Function ARN'
+    Value: !GetAtt TwitterTokenFunction.Arn
+  TwitterTokenFunctionIamRole:
+    Description: 'Implicit IAM Role created for Twitter Token function'
+    Value: !GetAtt TwitterTokenFunctionRole.Arn

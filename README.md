@@ -1,6 +1,8 @@
 # mysterio
 
-Using the Key Management Store (KMS) console create a new Customer managed key
+## Using the Key Management Store (KMS) console create a new Customer managed key
+
+### TSheets
 
 1. Create Key
 2. Next
@@ -15,7 +17,24 @@ Using the Key Management Store (KMS) console create a new Customer managed key
 11. Next
 12. Finish
 
-Using the AWS Systems Manager (SSM) Console create a new parameter
+### Twitter
+
+1. Create Key
+2. Next
+3. Alias: 'Twitter'
+4. Description: 'Encryption key for secret config value for the Twitter API'
+5. Tag key: 'Application' - Tag value: 'mysterio'
+6. Next
+7. Select key administrators
+8. Ensure 'Allow key administrators to delete this key' is checked
+9. Next
+10. Select key users
+11. Next
+12. Finish
+
+## Using the AWS Systems Manager (SSM) Console create a new parameter
+
+### TSheets
 
 1. Parameter Store
 2. Create parameter
@@ -27,13 +46,25 @@ Using the AWS Systems Manager (SSM) Console create a new parameter
 8. Add Tag - Tag key: 'Application' - Tag value: 'mysterio'
 9. Create parameter
 
-Deploy mysterio SAM application
+### Twitter
+
+1. Parameter Store
+2. Create parameter
+3. Name: '/Twitter/accessToken'
+4. Description: 'Twitter access token'
+5. SecureString
+6. KMS Key ID: 'alias/Twitter'
+7. Value: <Twitter Access Token>
+8. Add Tag - Tag key: 'Application' - Tag value: 'mysterio'
+9. Create parameter
+
+## Deploy mysterio SAM application
 
 ```bash
 npm run deploy:dev
 ```
 
-Using the KMS console, provide permissions for the lambda function role to use the CMK
+## Using the KMS console, provide permissions for the lambda function role to use the CMK
 
 1. TSheets
 2. Key users - Add

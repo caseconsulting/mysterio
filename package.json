@@ -12,6 +12,7 @@
     "local:jobcodes": "npm run build && sam local invoke JobcodesFunction -e jobcodes/event.json",
     "local:pto-balances": "npm run build && sam local invoke PTOBalancesFunction -e pto-balances/event.json",
     "local:time-sheets": "npm run build && sam local invoke TimeSheetsFunction -e time-sheets/event.json",
+    "local:twitter-token": "npm run build && sam local invoke TwitterTokenFunction -e twitter-token/event.json",
     "package:dev": "sam package --s3-bucket case-consulting-sam-deployments --s3-prefix mysterio-dev --output-template-file packaged.yaml",
     "tail:dev:pto-balances": "sam logs -n PTOBalancesFunction --stack-name mysterio-dev --tail",
     "tail:dev:time-sheets": "sam logs -n TimeSheetsFunction --stack-name mysterio-dev --tail",
