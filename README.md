@@ -66,12 +66,23 @@ npm run deploy:dev
 
 ## Using the KMS console, provide permissions for the lambda function role to use the CMK
 
+### TSheets
+
 1. TSheets
 2. Key users - Add
-3. Check mysterio-app-PTOBalancesFunctionRole-SY920ABW6CGM
+3. Check mysterio-dev-PTOBalancesFunctionRole-100YUP3XGFE8G
 4. Check mysterio-dev-TimeSheetsFunctionRole-NOI0EK8L2UOZ
 5. Check mysterio-dev-JobcodesFunctionRole-B3UBOFJV1HOG
-5. Add
+6. Add
+
+### Twitter
+
+1. Twitter
+2. Key users - Add
+3. Check mysterio-dev-TwitterTokenFunctionRole-N1Q2EYCZDPDC
+4. Add
+
+
 
 <!-- In the API Gateway console
 
