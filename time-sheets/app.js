@@ -56,10 +56,7 @@ async function start(event) {
   let employeesData = employeeRequest.data.results.users;
 
   if (employeesData == 0) {
-    return {
-      code: 404,
-      message: `No users found with employee number ${employeeNumbers}`
-    }
+    throw new Error(`No users found with employee number ${employeeNumbers}`)
   };
 
   // create map from user id to employee number

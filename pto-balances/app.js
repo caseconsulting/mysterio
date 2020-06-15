@@ -241,10 +241,7 @@ async function start(event) {
   let tSheetData = tSheetsResponse.data;
 
   if (tSheetData.results.users.length == 0) {
-    return {
-      code: 404,
-      message: `No users found with employee number ${employeeNumbers}`
-    }
+    throw new Error(`No users found with employee number ${employeeNumbers}`)
   };
 
   console.info('Retrieved TSheets data');
