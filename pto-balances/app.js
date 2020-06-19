@@ -224,57 +224,82 @@ async function start(event) {
 
   console.info('Obtaining PTO balances for employee #', employeeNumbers);
 
-  // set options for TSheet API call
-  let options = {
-    method: 'GET',
-    url: 'https://rest.tsheets.com/api/v1/users',
-    params: {
-      employee_numbers: employeeNumbers
-    },
-    headers: {
-      Authorization: `Bearer ${accessToken}`
+  let page = 1;
+  let allTSheetData = {};
+  let currTSheetData = {};
+  do {
+    // set options for TSheet API call
+    let options = {
+      method: 'GET',
+      url: 'https://rest.tsheets.com/api/v1/users',
+      params: {
+        employee_numbers: employeeNumbers,
+        page: page
+      },
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    };
+
+    // request data from TSheet API
+    let tSheetsResponse = await axios(options);
+    currTSheetData = tSheetsResponse.data;
+
+    if (page === 1) {
+      allTSheetData = _.cloneDeep(currTSheetData);
+      allTSheetData.results.users = {};
     }
-  };
 
-  // request data from TSheet API
-  let tSheetsResponse = await axios(options);
-  let tSheetData = tSheetsResponse.data;
+    console.info('Retrieved TSheets data');
 
-  if (tSheetData.results.users.length === 0) {
+    if (!_.isEmpty(currTSheetData.results.users)) {
+      // create a map from job code to job name
+      let jobCodesMap = _.mapValues(currTSheetData.supplemental_data.jobcodes, (jobCode) => {
+        return jobCode.name;
+      });
+
+      // translate balances code with the code-name map
+      console.info('Translating TSheets data');
+      let newUserData = {};
+
+      _.each(currTSheetData.results.users, (user) => {
+        let ptoBalancesCode = user.pto_balances;
+        let ptoBalancesName = {};
+
+        _.each(ptoBalancesCode, (value, code) => {
+          // set job code name and convert value from seconds to hours
+          ptoBalancesName[jobCodesMap[code]] = secondsToHours(value);
+        });
+
+        newUserData[user.employee_number] = {
+          id: user.id,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          email: user.email,
+          username: user.username,
+          pto_balances: ptoBalancesName
+        };
+      });
+
+      allTSheetData.results.users = _.merge(allTSheetData.results.users, newUserData);
+
+      allTSheetData.supplemental_data.jobcodes = _.merge(
+        allTSheetData.supplemental_data.jobcodes,
+        currTSheetData.supplemental_data.jobcodes
+      );
+    }
+    page++;
+  } while (!_.isEmpty(currTSheetData.results.users));
+
+  if (_.isEmpty(allTSheetData.results.users)) {
     throw new Error(`No users found with employee number ${employeeNumbers}`);
   }
-
-  console.info('Retrieved TSheets data');
-
-  // create a map from job code to job name
-  let jobCodesMap = _.mapValues(tSheetData.supplemental_data.jobcodes, (jobCode) => {
-    return jobCode.name;
-  });
-
-  // translate balances code with the code-name map
-  console.info('Translating TSheets data');
-  let newUserData = {};
-
-  _.each(tSheetData.results.users, (user) => {
-    let ptoBalancesCode = user.pto_balances;
-    let ptoBalancesName = {};
-
-    _.each(ptoBalancesCode, (value, code) => {
-      // set job code name and convert value from seconds to hours
-      ptoBalancesName[jobCodesMap[code]] = secondsToHours(value);
-    });
-
-    newUserData[user.employee_number] = {
-      pto_balances: ptoBalancesName
-    };
-  });
-  tSheetData.results.users = newUserData;
 
   // return the filtered dataset response
   console.info('Returning TSheets data');
   return {
     statusCode: 200,
-    body: tSheetData
+    body: allTSheetData
   };
 }
 
