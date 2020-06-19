@@ -244,6 +244,38 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${TwitterTokenFunction}
       RetentionInDays: 30
+  BasecampTokenFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: !Join
+        - ''
+        - - mysterio-basecamp-token-
+          - !Ref Stage
+      CodeUri: basecamp-token/
+      Description: Retrieves access token for the Case Consulting Basecamp Info account
+      Handler: app.handler
+      Runtime: nodejs12.x
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/Basecamp/*
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
+  BasecampTokenFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - BasecampTokenFunction
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${BasecampTokenFunction}
+      RetentionInDays: 30
 
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
@@ -282,3 +314,9 @@ Outputs:
   TwitterTokenFunctionIamRole:
     Description: 'Implicit IAM Role created for Twitter Token function'
     Value: !GetAtt TwitterTokenFunctionRole.Arn
+  BasecampTokenFunction:
+    Description: 'Basecamp Token Lambda Function ARN'
+    Value: !GetAtt BasecampTokenFunction.Arn
+  BasecampTokenFunctionIamRole:
+    Description: 'Implicit IAM Role created for Basecamp Token function'
+    Value: !GetAtt BasecampTokenFunctionRole.Arn
