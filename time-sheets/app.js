@@ -39,57 +39,80 @@ async function start(event) {
 
   console.info(`Getting user data`);
 
-  // set userOptions for TSheet API call
-  let userOptions = {
-    method: 'GET',
-    url: 'https://rest.tsheets.com/api/v1/users',
-    params: {
-      employee_numbers: employeeNumbers
-    },
-    headers: {
-      Authorization: `Bearer ${accessToken}`
-    }
-  };
+  let page = 1;
+  let employeesData = {};
+  let employeeMap = {};
+  let ptoJobCodeMap = {};
+  do {
+    // set userOptions for TSheet API call
+    let userOptions = {
+      method: 'GET',
+      url: 'https://rest.tsheets.com/api/v1/users',
+      params: {
+        employee_numbers: employeeNumbers,
+        page: page
+      },
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    };
 
-  // request user data from TSheet API
-  let employeeRequest = await axios(userOptions);
-  let employeesData = employeeRequest.data.results.users;
+    // request user data from TSheet API
+    let employeeRequest = await axios(userOptions);
+    employeesData = employeeRequest.data.results.users;
 
-  if (employeesData == 0) {
-    throw new Error(`No users found with employee number ${employeeNumbers}`)
-  };
+    // create map from user id to employee number
+    let currEmployeeMap = _.mapValues(employeesData, (user) => {
+      return user.employee_number;
+    });
 
-  // create map from user id to employee number
-  let employeeNumberMap = _.mapValues(employeesData, (user) => {
-    return user.employee_number;
-  });
+    employeeMap = _.merge(employeeMap, currEmployeeMap);
 
-  // create a map from job code to job name
-  let ptoJobCodeMap = _.mapValues(employeeRequest.data.supplemental_data.jobcodes, (jobCode) => {
-    return jobCode.name;
-  });
+    // create a map from job code to job name
+    let currPtoJobCodeMap = _.mapValues(employeeRequest.data.supplemental_data.jobcodes, (jobCode) => {
+      return jobCode.name;
+    });
+
+    ptoJobCodeMap = _.merge(ptoJobCodeMap, currPtoJobCodeMap);
+
+    page++;
+  } while (_.isEmpty(employeesData));
+
+  if (employeeMap.length === 0) {
+    throw new Error(`No users found with employee number ${employeeNumbers}`);
+  }
+
+  let jobCodesMap = ptoJobCodeMap;
 
   console.info(`Getting job code data`);
 
-  // set jobCodeOptions for TSheet API call
-  let jobCodeOptions = {
-    method: 'GET',
-    url: 'https://rest.tsheets.com/api/v1/jobcodes',
-    headers: {
-      Authorization: `Bearer ${accessToken}`
-    }
-  };
+  page = 1;
+  let jobCodeData = [];
+  do {
+    // set jobCodeOptions for TSheet API call
+    let jobCodeOptions = {
+      method: 'GET',
+      url: 'https://rest.tsheets.com/api/v1/jobcodes',
+      params: {
+        page: page
+      },
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    };
 
-  // request job code data from TSheet API
-  let jobCodeRequest = await axios(jobCodeOptions);
-  let jobCodeData = jobCodeRequest.data.results.jobcodes;
+    // request job code data from TSheet API
+    let jobCodeRequest = await axios(jobCodeOptions);
+    jobCodeData = jobCodeRequest.data.results.jobcodes;
 
-  // create a map from job code to job name
-  let jobCodesMap = _.mapValues(jobCodeData, (jobCode) => {
-    return jobCode.name;
-  });
+    // create a map from job code to job name
+    let currJobCodesMap = _.mapValues(jobCodeData, (jobCode) => {
+      return jobCode.name;
+    });
 
-  jobCodesMap = _.merge(jobCodesMap, ptoJobCodeMap);
+    jobCodesMap = _.merge(jobCodesMap, currJobCodesMap);
+    page++;
+  } while (jobCodeData.length !== 0);
 
   // get employee id and employee_number
   let employees = _.map(employeesData, (e) => {
@@ -103,36 +126,38 @@ async function start(event) {
   for (i = 0; i < employees.length; i++) {
     console.info(`Getting time sheet data for employee ${employees[i].employee_number} with userId ${employees[i].id}`);
 
-    // set timeSheetOptions for TSheet API call
-    let timeSheetOptions = {
-      method: 'GET',
-      url: 'https://rest.tsheets.com/api/v1/timesheets',
-      params: {
-        user_ids: employees[i].id,
-        start_date: startDate,
-        end_date: endDate,
-        on_the_clock: 'both'
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      }
-    };
+    page = 1;
+    let timeSheets = [];
+    do {
+      // set timeSheetOptions for TSheet API call
+      let timeSheetOptions = {
+        method: 'GET',
+        url: 'https://rest.tsheets.com/api/v1/timesheets',
+        params: {
+          user_ids: employees[i].id,
+          start_date: startDate,
+          end_date: endDate,
+          on_the_clock: 'both',
+          page: page
+        },
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        }
+      };
 
-    // request time sheets data from TSheet API
-    let tSheetsResponse = await axios(timeSheetOptions);
-    let timeSheets = tSheetsResponse.data.results.timesheets;
+      // request time sheets data from TSheet API
+      let tSheetsResponse = await axios(timeSheetOptions);
+      timeSheets = tSheetsResponse.data.results.timesheets;
 
+      _.forEach(timeSheets, (timesheet) => {
+        timesheet.duration = secondsToHours(timesheet.duration); // convert duration from seconds to hours
+        timesheet.jobcode = jobCodesMap[timesheet.jobcode_id];
+        timesheet.employee_number = employeeMap[timesheet.user_id];
+        allTimeSheets.push(timesheet); // add to array of all time sheets
+      });
+      page++;
+    } while (timeSheets.length !== 0);
     console.info(`Retrieved time sheets for employee ${employees[i].employee_number}`);
-
-    // translate duration from seconds to hours
-    console.info('Translating time sheet duration from seconds to hours');
-
-    _.forEach(timeSheets, (timesheet) => {
-      timesheet.duration = secondsToHours(timesheet.duration); // convert duration from seconds to hours
-      timesheet.jobcode = jobCodesMap[timesheet.jobcode_id];
-      timesheet.employee_number = employeeNumberMap[timesheet.user_id];
-      allTimeSheets.push(timesheet); // add to array of all time sheets
-    });
   }
 
   // return the translated dataset response
@@ -140,7 +165,7 @@ async function start(event) {
 
   return {
     statusCode: 200,
-    body: allTimeSheets,
+    body: allTimeSheets
   };
 }
 

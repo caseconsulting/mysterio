@@ -23,18 +23,42 @@ async function start(event) {
 
   console.info('Obtaining job codes');
 
-  // set options for TSheet API call
-  let options = {
-    method: 'GET',
-    url: 'https://rest.tsheets.com/api/v1/jobcodes',
-    headers: {
-      Authorization: `Bearer ${accessToken}`
-    }
-  };
+  let allJobCodes = {};
+  let page = 1;
+  let jobCodeData = {};
+  do {
+    // set options for TSheet API call
+    let options = {
+      method: 'GET',
+      url: 'https://rest.tsheets.com/api/v1/jobcodes',
+      params: {
+        page: page
+      },
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    };
 
-  // request data from TSheet API
-  let tSheetsResponse = await axios(options);
-  let tSheetData = tSheetsResponse.data;
+    // request data from TSheet API
+    let jobCodeRequest = await axios(options);
+    jobCodeData = jobCodeRequest.data.results.jobcodes;
+
+    allJobCodes = _.merge(allJobCodes, jobCodeData);
+    page++;
+  } while (jobCodeData.length !== 0);
+
+  // // set options for TSheet API call
+  // let options = {
+  //   method: 'GET',
+  //   url: 'https://rest.tsheets.com/api/v1/jobcodes',
+  //   headers: {
+  //     Authorization: `Bearer ${accessToken}`
+  //   }
+  // };
+  //
+  // // request data from TSheet API
+  // let tSheetsResponse = await axios(options);
+  // let tSheetData = tSheetsResponse.data;
 
   console.info('Retrieved TSheets data');
 
@@ -42,7 +66,7 @@ async function start(event) {
   console.info('Returning TSheets data');
   return {
     statusCode: 200,
-    body: tSheetData
+    body: allJobCodes
   };
 }
 
