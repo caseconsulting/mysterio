@@ -17,7 +17,7 @@ async function getSecret(secretName) {
 /*
  * Begin execution of Jobcodes Lambda Function
  */
-async function start(event) {
+async function start() {
   // get access token from parameter store
   let accessToken = await getSecret('/TSheets/accessToken');
 
@@ -43,26 +43,10 @@ async function start(event) {
     let jobCodeRequest = await axios(options);
     jobCodeData = jobCodeRequest.data.results.jobcodes;
 
-    allJobCodes = _.merge(allJobCodes, jobCodeData);
-    page++;
-  } while (jobCodeData.length !== 0);
+    allJobCodes = _.merge(allJobCodes, jobCodeData); // union job codes
+    page++; // increment page
+  } while (!_.isEmpty(jobCodeData)); // loop while more job codes exist
 
-  // // set options for TSheet API call
-  // let options = {
-  //   method: 'GET',
-  //   url: 'https://rest.tsheets.com/api/v1/jobcodes',
-  //   headers: {
-  //     Authorization: `Bearer ${accessToken}`
-  //   }
-  // };
-  //
-  // // request data from TSheet API
-  // let tSheetsResponse = await axios(options);
-  // let tSheetData = tSheetsResponse.data;
-
-  console.info('Retrieved TSheets data');
-
-  // return the filtered dataset response
   console.info('Returning TSheets data');
   return {
     statusCode: 200,
@@ -82,8 +66,8 @@ async function start(event) {
  * @returns {Object} object - API Gateway Lambda Proxy Output Format
  *
  */
-async function handler(event, context) {
-  return start(event);
+async function handler() {
+  return start();
 }
 
 module.exports = { handler };
