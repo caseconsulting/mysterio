@@ -48,6 +48,21 @@ Globals:
         STAGE: !Ref Stage
 
 Resources:
+  s3Attachments:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      AccessControl: Private
+      BucketName: !Join
+        - ''
+        - - case-consulting-sam-deployments-
+          - !Ref Stage
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Application
+          Value: mysterio
+        - Key: Stage
+          Value: !Ref Stage
   # APIInvokeRole:
   #   Type: AWS::IAM::Role
   #   Properties:
