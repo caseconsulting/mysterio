@@ -216,6 +216,7 @@ function secondsToHours(value) {
  * Begin execution of PTOBalance Lambda Function
  */
 async function start(event) {
+  console.info('pto-balances');
   // get access token from parameter store
   let accessToken = await getSecret('/TSheets/accessToken');
 
