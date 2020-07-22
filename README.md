@@ -82,7 +82,12 @@ npm run deploy:dev
 3. Check mysterio-dev-TwitterTokenFunctionRole-N1Q2EYCZDPDC
 4. Add
 
+### Basecamp
 
+1. Basecamp
+2. Key users - Add
+3. Check mysterio-dev-BasecampTokenFunctionRole-1XLOPRW7GXNDP
+4. Add
 
 <!-- In the API Gateway console
 
