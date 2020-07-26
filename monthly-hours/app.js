@@ -157,6 +157,9 @@ async function start(event) {
       } else {
         // log todays hours
         todaysHours += timesheet.duration ? timesheet.duration : 0;
+
+        // get todays hours of currently clocked in time sheet
+        // todaysHours += timesheet.duration ? timesheet.duration : moment.duration(moment().diff(moment(timesheet.start))).as('seconds');
       }
 
       // if the jobcode exists add the duration else set the jobcode duration to the current duration
