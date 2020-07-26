@@ -179,9 +179,11 @@ async function start(event) {
   }
 
   // map jobcode name to jobcode ids
-  let jobcodeHoursMapped = {};
+  let jobcodeHoursMapped = [];
   _.forEach(jobcodeHours, (hours, id) => {
-    jobcodeHoursMapped[jobCodesMap[id]] = hours;
+    jobcodeHoursMapped.push({
+      jobCodesMap[id] : hours;
+    });
   });
 
   console.info('object returned');
