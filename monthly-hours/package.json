@@ -1,5 +1,5 @@
 {
-  "name": "time-sheets",
+  "name": "monthly-hours",
   "version": "1.0.0",
   "private": true,
   "description": "Retrieves time sheets from TSheets API for given user between a date range",

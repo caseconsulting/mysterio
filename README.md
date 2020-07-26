@@ -71,7 +71,7 @@ npm run deploy:dev
 1. TSheets
 2. Key users - Add
 3. Check mysterio-dev-PTOBalancesFunctionRole-100YUP3XGFE8G
-4. Check mysterio-dev-TimeSheetsFunctionRole-NOI0EK8L2UOZ
+4. Check mysterio-dev-MonthlyHoursFunctionRole-NOI0EK8L2UOZ
 5. Check mysterio-dev-JobcodesFunctionRole-B3UBOFJV1HOG
 6. Add
 
@@ -89,9 +89,10 @@ npm run deploy:dev
 3. Check mysterio-dev-BasecampTokenFunctionRole-1XLOPRW7GXNDP
 4. Add
 
-<!-- In the API Gateway console
+## Next time deploying to Test/Prod. Update the TimeSheet Function name to MonthlyHours
 
-1. Select the API
-2. Settings
-3. Change Endpoint Type to Regional
-4. Save Changes -->
+1. Go to AWS KMS console
+2. TSheets
+3. Remove mysterio-test-TimeSheetFunctionRole- from the policy
+4. Add Key users
+5. Select mysterio-test-MonthlyHoursFunctionRole-

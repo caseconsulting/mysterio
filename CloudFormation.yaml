@@ -129,25 +129,25 @@ Resources:
   #       - /aws/apigateway/mysterio-${stageName}
   #       - stageName: !Ref Stage
   #     RetentionInDays: 30
-  TimeSheetsFunction:
+  MonthlyHoursFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     # DependsOn:
     #   - APIInvokeRole
     Properties:
       FunctionName: !Join
         - ''
-        - - mysterio-time-sheets-
+        - - mysterio-monthly-hours-
           - !Ref Stage
-      CodeUri: time-sheets/
+      CodeUri: monthly-hours/
       Description: Retrieves time sheets from TSheets API for given user between a date range
       Handler: app.handler
       Runtime: nodejs12.x
       Timeout: 30
       # Events:
-      #   TimeSheets:
+      #   MonthlyHours:
       #     Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
       #     Properties:
-      #       Path: /time-sheets/{employeeNumber}/{startDate}/{endDate}
+      #       Path: /monthly-hours/{employeeNumber}/{startDate}/{endDate}
       #       Method: get
       #       Auth:
       #         InvokeRole: !GetAtt APIInvokeRole.Arn
@@ -164,17 +164,17 @@ Resources:
                 - logs:PutLogEvents
               Effect: Allow
               Resource: '*'
-  TimeSheetsFunctionLogGroup:
+  MonthlyHoursFunctionLogGroup:
     Type: AWS::Logs::LogGroup
     DependsOn:
-      - TimeSheetsFunction
+      - MonthlyHoursFunction
     Properties:
-      LogGroupName: !Sub /aws/lambda/${TimeSheetsFunction}
+      LogGroupName: !Sub /aws/lambda/${MonthlyHoursFunction}
       RetentionInDays: 30
   # ApiLogGroup:
   #   Type: AWS::Logs::LogGroup
   #   DependsOn:
-  #     - TimeSheetsFunction
+  #     - MonthlyHoursFunction
   #   Properties:
   #     LogGroupName: !Sub
   #       - /aws/apigateway/mysterio-${stageName}
@@ -290,15 +290,15 @@ Outputs:
   PTOBalancesFunctionIamRole:
     Description: 'Implicit IAM Role created for PTO Balances function'
     Value: !GetAtt PTOBalancesFunctionRole.Arn
-  # TimeSheetsApi:
+  # MonthlyHoursApi:
   #   Description: 'API Gateway endpoint URL for Prod stage'
-  #   Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/time-sheets/'
-  TimeSheetsFunction:
+  #   Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/monthly-hours/'
+  MonthlyHoursFunction:
     Description: 'Time Sheets Lambda Function ARN'
-    Value: !GetAtt TimeSheetsFunction.Arn
-  TimeSheetsFunctionIamRole:
+    Value: !GetAtt MonthlyHoursFunction.Arn
+  MonthlyHoursFunctionIamRole:
     Description: 'Implicit IAM Role created for Time Sheets function'
-    Value: !GetAtt TimeSheetsFunctionRole.Arn
+    Value: !GetAtt MonthlyHoursFunctionRole.Arn
   # JobcodesApi:
   #   Description: 'API Gateway endpoint URL for Prod stage'
   #   Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/jobcodes/'
