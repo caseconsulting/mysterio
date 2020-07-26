@@ -1,8 +1,10 @@
 // https://tsheetsteam.github.io/api_docs/?javascript--node#request-formats
 // https://tsheetsteam.github.io/api_docs/?javascript--node#timesheets
+const moment = require('moment');
 const axios = require('axios');
 const _ = require('lodash');
 const ssm = require('./aws-client');
+const ISOFORMAT = 'YYYY-MM-DD';
 
 /*
  * Access system manager parameter store and return secret value of the given name.
@@ -29,13 +31,18 @@ function secondsToHours(value) {
 async function start(event) {
   // get access token from parameter store
   let accessToken = await getSecret('/TSheets/accessToken');
-
   // variables to filter tsheets api query on
   let employeeNumbers = event.employeeNumber; // 10044 10020
-  let startDate = event.startDate;
-  let endDate = event.endDate;
+  // get the first day of the month in the proper format
+  let firstDay = moment().startOf('month').format(ISOFORMAT);
+  // get last day of the month
+  let lastDay = moment().endOf('month').format(ISOFORMAT);
+  // get todays date
+  let today = moment().startOf('day');
 
-  console.info(`Obtaining time sheets for employees #${employeeNumbers} from ${startDate} to ${endDate}`);
+  console.info(`today: ` + today.format(ISOFORMAT));
+
+  console.info(`Obtaining time sheets for employees #${employeeNumbers} for this month`);
 
   console.info(`Getting user data`);
 
@@ -119,10 +126,12 @@ async function start(event) {
     return { id: e.id, employee_number: e.employee_number };
   });
 
-  let allTimeSheets = [];
-
   // loop all employees
   let i; // loop index
+  let previousHours = 0;
+  let todaysHours = 0;
+  let futureHours = 0;
+  let jobcodeHours = {};
   for (i = 0; i < employees.length; i++) {
     console.info(`Getting time sheet data for employee ${employees[i].employee_number} with userId ${employees[i].id}`);
 
@@ -135,8 +144,8 @@ async function start(event) {
         url: 'https://rest.tsheets.com/api/v1/timesheets',
         params: {
           user_ids: employees[i].id,
-          start_date: startDate,
-          end_date: endDate,
+          start_date: firstDay,
+          end_date: lastDay,
           on_the_clock: 'both',
           page: page
         },
@@ -151,21 +160,49 @@ async function start(event) {
 
       _.forEach(timeSheets, (timesheet) => {
         timesheet.duration = secondsToHours(timesheet.duration); // convert duration from seconds to hours
-        timesheet.jobcode = jobCodesMap[timesheet.jobcode_id];
-        timesheet.employee_number = employeeMap[timesheet.user_id];
-        allTimeSheets.push(timesheet); // add to array of all time sheets
+        if (moment(timesheet.date, ISOFORMAT).isBefore(today)) { // log previous hours (before today)
+          previousHours += timesheet.duration;
+        } else if (moment(timesheet.date, ISOFORMAT).isAfter(today)) { // log future hours (afrer today)''
+          console.log('inFutute');
+          futureHours += timesheet.duration;
+        } else { // log todays hours
+          console.log('inToday: ' + timesheet.duration);
+          todaysHours += timesheet.duration ? timesheet.duration : 0;
+        }
+        // timesheet.jobcode = jobCodesMap[timesheet.jobcode_id];
+        // if the jobcode exists add the duration else set the jobcode duration to the current duration
+        jobcodeHours[timesheet.jobcode_id] = jobcodeHours[timesheet.jobcode_id] ? jobcodeHours[timesheet.jobcode_id] + timesheet.duration : timesheet.duration;
       });
       page++;
     } while (timeSheets.length !== 0);
     console.info(`Retrieved time sheets for employee ${employees[i].employee_number}`);
   }
 
+  // map jobcode name to jobcode ids
+  let jobcodeHoursMapped = {};
+  _.forEach(jobcodeHours, (hours, id) => {
+    jobcodeHoursMapped[jobCodesMap[id]] = hours;
+  });
+
+  console.info('object returned');
+  console.info({
+    previousHours,
+    todaysHours,
+    futureHours,
+    jobcodeHours: jobcodeHoursMapped
+  });
+
   // return the translated dataset response
   console.info('Returning time sheet data');
 
   return {
     statusCode: 200,
-    body: allTimeSheets
+    body: {
+      previousHours,
+      todaysHours,
+      futureHours,
+      jobcodeHours: jobcodeHoursMapped
+    }
   };
 }
 
