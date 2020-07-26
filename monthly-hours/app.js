@@ -148,25 +148,28 @@ async function start(event) {
     timeSheets = tSheetsResponse.data.results.timesheets;
 
     _.forEach(timeSheets, (timesheet) => {
+      // get todays hours of currently clocked in time sheet
+      // let duration = timesheet.duration ? timesheet.duration : moment.duration(moment().diff(moment(timesheet.start))).as('seconds');
+
+      let duration = timesheet.duration;
+
       if (moment(timesheet.date, ISOFORMAT).isBefore(today)) {
         // log previous hours (before today)
-        previousHours += timesheet.duration;
+        previousHours += duration;
       } else if (moment(timesheet.date, ISOFORMAT).isAfter(today)) {
-        // log future hours (afrer today)''
-        futureHours += timesheet.duration;
+        // log future hours (after today)''
+        futureHours += duration;
       } else {
         // log todays hours
-        todaysHours += timesheet.duration ? timesheet.duration : 0;
-
-        // get todays hours of currently clocked in time sheet
-        // todaysHours += timesheet.duration ? timesheet.duration : moment.duration(moment().diff(moment(timesheet.start))).as('seconds');
+        todaysHours += duration;
       }
 
       // if the jobcode exists add the duration else set the jobcode duration to the current duration
       jobcodeHours[timesheet.jobcode_id] = jobcodeHours[timesheet.jobcode_id]
-        ? jobcodeHours[timesheet.jobcode_id] + timesheet.duration
-        : timesheet.duration;
+        ? jobcodeHours[timesheet.jobcode_id] + duration
+        : duration;
     });
+
     page++;
   } while (timeSheets.length !== 0);
 
