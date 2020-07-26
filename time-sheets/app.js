@@ -22,7 +22,7 @@ async function getSecret(secretName) {
  * Converts seconds to hours to the lower bound 2 decimal place.
  */
 function secondsToHours(value) {
-  return Math.floor(parseInt(value) / 36) / 100;
+  return Number((Math.floor(parseInt(value) / 36) / 100).toFixed(2));
 }
 
 /*
@@ -32,7 +32,7 @@ async function start(event) {
   // get access token from parameter store
   let accessToken = await getSecret('/TSheets/accessToken');
   // variables to filter tsheets api query on
-  let employeeNumbers = event.employeeNumber; // 10044 10020
+  let employeeNumber = event.employeeNumber; // 10044 10020
   // get the first day of the month in the proper format
   let firstDay = moment().startOf('month').format(ISOFORMAT);
   // get last day of the month
@@ -40,60 +40,55 @@ async function start(event) {
   // get todays date
   let today = moment().startOf('day');
 
-  console.info(`today: ` + today.format(ISOFORMAT));
-
-  console.info(`Obtaining time sheets for employees #${employeeNumbers} for this month`);
+  console.info(`Obtaining hourly time charges for employee #${employeeNumber} for this month`);
 
   console.info(`Getting user data`);
 
-  let page = 1;
-  let employeesData = {};
-  let employeeMap = {};
-  let ptoJobCodeMap = {};
-  do {
-    // set userOptions for TSheet API call
-    let userOptions = {
-      method: 'GET',
-      url: 'https://rest.tsheets.com/api/v1/users',
-      params: {
-        employee_numbers: employeeNumbers,
-        page: page
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      }
-    };
-
-    // request user data from TSheet API
-    let employeeRequest = await axios(userOptions);
-    employeesData = employeeRequest.data.results.users;
-
-    // create map from user id to employee number
-    let currEmployeeMap = _.mapValues(employeesData, (user) => {
-      return user.employee_number;
-    });
-
-    employeeMap = _.merge(employeeMap, currEmployeeMap);
-
-    // create a map from job code to job name
-    let currPtoJobCodeMap = _.mapValues(employeeRequest.data.supplemental_data.jobcodes, (jobCode) => {
-      return jobCode.name;
-    });
-
-    ptoJobCodeMap = _.merge(ptoJobCodeMap, currPtoJobCodeMap);
-
-    page++;
-  } while (_.isEmpty(employeesData));
-
-  if (employeeMap.length === 0) {
-    throw new Error(`No users found with employee number ${employeeNumbers}`);
+  let employeeNums = employeeNumber.split(',');
+  if (employeeNums.length < 1) {
+    throw new Error(`Missing employee number`);
+  } else if (employeeNums.length > 1) {
+    throw new Error(`Cannot query more than 1 employee number`);
   }
 
-  let jobCodesMap = ptoJobCodeMap;
+  // set userOptions for TSheet API call
+  let userOptions = {
+    method: 'GET',
+    url: 'https://rest.tsheets.com/api/v1/users',
+    params: {
+      employee_numbers: employeeNumber
+    },
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  };
+
+  // request user data from TSheet API
+  let employeeRequest = await axios(userOptions);
+
+  // get employee id
+  let employeeIds = Object.keys(employeeRequest.data.results.users);
+
+  // throw error if no users found
+  if (_.isEmpty(employeeIds)) {
+    throw new Error(`No users found with employee number ${employeeNumber}`);
+  }
+
+  let employeeId = employeeIds[0];
+
+  console.info(`EmployeeId: ${employeeId}`);
+
+  // get data for employee id
+  let employeeData = employeeRequest.data.results.users[employeeId];
+
+  // create a map from job code to job name
+  let jobCodesMap = _.mapValues(employeeRequest.data.supplemental_data.jobcodes, (jobCode) => {
+    return jobCode.name;
+  });
 
   console.info(`Getting job code data`);
 
-  page = 1;
+  let page = 1;
   let jobCodeData = [];
   do {
     // set jobCodeOptions for TSheet API call
@@ -121,82 +116,84 @@ async function start(event) {
     page++;
   } while (jobCodeData.length !== 0);
 
-  // get employee id and employee_number
-  let employees = _.map(employeesData, (e) => {
-    return { id: e.id, employee_number: e.employee_number };
-  });
-
   // loop all employees
-  let i; // loop index
   let previousHours = 0;
   let todaysHours = 0;
   let futureHours = 0;
   let jobcodeHours = {};
-  for (i = 0; i < employees.length; i++) {
-    console.info(`Getting time sheet data for employee ${employees[i].employee_number} with userId ${employees[i].id}`);
 
-    page = 1;
-    let timeSheets = [];
-    do {
-      // set timeSheetOptions for TSheet API call
-      let timeSheetOptions = {
-        method: 'GET',
-        url: 'https://rest.tsheets.com/api/v1/timesheets',
-        params: {
-          user_ids: employees[i].id,
-          start_date: firstDay,
-          end_date: lastDay,
-          on_the_clock: 'both',
-          page: page
-        },
-        headers: {
-          Authorization: `Bearer ${accessToken}`
-        }
-      };
+  console.info(`Getting hourly data for employee ${employeeNumber} with userId ${employeeId}`);
 
-      // request time sheets data from TSheet API
-      let tSheetsResponse = await axios(timeSheetOptions);
-      timeSheets = tSheetsResponse.data.results.timesheets;
+  page = 1;
+  let timeSheets = [];
+  do {
+    // set timeSheetOptions for TSheet API call
+    let timeSheetOptions = {
+      method: 'GET',
+      url: 'https://rest.tsheets.com/api/v1/timesheets',
+      params: {
+        user_ids: employeeId,
+        start_date: firstDay,
+        end_date: lastDay,
+        on_the_clock: 'both',
+        page: page
+      },
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    };
 
-      _.forEach(timeSheets, (timesheet) => {
-        timesheet.duration = secondsToHours(timesheet.duration); // convert duration from seconds to hours
-        if (moment(timesheet.date, ISOFORMAT).isBefore(today)) { // log previous hours (before today)
-          previousHours += timesheet.duration;
-        } else if (moment(timesheet.date, ISOFORMAT).isAfter(today)) { // log future hours (afrer today)''
-          console.log('inFutute');
-          futureHours += timesheet.duration;
-        } else { // log todays hours
-          console.log('inToday: ' + timesheet.duration);
-          todaysHours += timesheet.duration ? timesheet.duration : 0;
-        }
-        // timesheet.jobcode = jobCodesMap[timesheet.jobcode_id];
-        // if the jobcode exists add the duration else set the jobcode duration to the current duration
-        jobcodeHours[timesheet.jobcode_id] = jobcodeHours[timesheet.jobcode_id] ? jobcodeHours[timesheet.jobcode_id] + timesheet.duration : timesheet.duration;
-      });
-      page++;
-    } while (timeSheets.length !== 0);
-    console.info(`Retrieved time sheets for employee ${employees[i].employee_number}`);
-  }
+    // request time sheets data from TSheet API
+    let tSheetsResponse = await axios(timeSheetOptions);
+    timeSheets = tSheetsResponse.data.results.timesheets;
+
+    _.forEach(timeSheets, (timesheet) => {
+      if (moment(timesheet.date, ISOFORMAT).isBefore(today)) {
+        // log previous hours (before today)
+        previousHours += timesheet.duration;
+      } else if (moment(timesheet.date, ISOFORMAT).isAfter(today)) {
+        // log future hours (afrer today)''
+        futureHours += timesheet.duration;
+      } else {
+        // log todays hours
+        todaysHours += timesheet.duration ? timesheet.duration : 0;
+      }
+
+      // if the jobcode exists add the duration else set the jobcode duration to the current duration
+      jobcodeHours[timesheet.jobcode_id] = jobcodeHours[timesheet.jobcode_id]
+        ? jobcodeHours[timesheet.jobcode_id] + timesheet.duration
+        : timesheet.duration;
+    });
+    page++;
+  } while (timeSheets.length !== 0);
+
+  console.info(`Retrieved time sheet hours for employee ${employeeNumber}`);
+
+  console.info('Converting seconds to hours');
+  previousHours = secondsToHours(previousHours); // convert previous hours from secs to hrs
+  futureHours = secondsToHours(futureHours); // convert future hours from secs to hrs
+  todaysHours = secondsToHours(todaysHours); // convert todays hours from secs to hrs
 
   // map jobcode name to jobcode ids
+  console.info('Converting jobcode ids to names and seconds to hours');
   let jobcodeHoursMapped = [];
-  _.forEach(jobcodeHours, (hours, id) => {
+  _.forEach(jobcodeHours, (seconds, id) => {
+    let name = jobCodesMap[id];
+    let hours = secondsToHours(seconds); // convert duration from seconds to hours
     jobcodeHoursMapped.push({
-      jobCodesMap[id] : hours;
+      name,
+      hours
     });
   });
 
-  console.info('object returned');
-  console.info({
-    previousHours,
-    todaysHours,
-    futureHours,
-    jobcodeHours: jobcodeHoursMapped
+  // sort jobcodes by name
+  jobcodeHoursMapped = _.sortBy(jobcodeHoursMapped, (jobcode) => {
+    return jobcode.name;
   });
 
-  // return the translated dataset response
-  console.info('Returning time sheet data');
+  console.info('Returning tSheets monthly hour time charges');
 
+  // return the translated dataset response
   return {
     statusCode: 200,
     body: {
