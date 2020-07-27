@@ -44,6 +44,7 @@
     "jasmine": "^3.5.0"
   },
   "dependencies": {
-    "moment": "^2.27.0"
+    "moment": "^2.27.0",
+    "moment-timezone": "^0.5.31"
   }
 }

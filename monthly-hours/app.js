@@ -1,9 +1,11 @@
 // https://tsheetsteam.github.io/api_docs/?javascript--node#request-formats
 // https://tsheetsteam.github.io/api_docs/?javascript--node#timesheets
-const moment = require('moment');
+const moment = require('moment-timezone');
 const axios = require('axios');
 const _ = require('lodash');
 const ssm = require('./aws-client');
+
+moment.tz.setDefault("America/New_York");
 const ISOFORMAT = 'YYYY-MM-DD';
 
 /*
