@@ -38,7 +38,8 @@ async function start(event) {
   // get last day of the month
   let lastDay = moment().endOf('month').format(ISOFORMAT);
   // get todays date
-  let today = moment().startOf('day');
+  let todayStart = moment().startOf('day');
+  let todayEnd = moment().endOf('day');
 
   console.info(`Obtaining hourly time charges for employee #${employeeNumber} for this month`);
 
@@ -149,14 +150,14 @@ async function start(event) {
 
     _.forEach(timeSheets, (timesheet) => {
       // get todays hours of currently clocked in time sheet
-      // let duration = timesheet.duration ? timesheet.duration : moment.duration(moment().diff(moment(timesheet.start))).as('seconds');
+      let duration = timesheet.duration ? timesheet.duration : moment.duration(moment().diff(moment(timesheet.start))).as('seconds');
 
-      let duration = timesheet.duration;
+      // let duration = timesheet.duration;
 
-      if (moment(timesheet.date, ISOFORMAT).isBefore(today)) {
+      if (moment(timesheet.date, ISOFORMAT).isBefore(todayStart)) {
         // log previous hours (before today)
         previousHours += duration;
-      } else if (moment(timesheet.date, ISOFORMAT).isAfter(today)) {
+      } else if (moment(timesheet.date, ISOFORMAT).isAfter(todayEnd)) {
         // log future hours (after today)''
         futureHours += duration;
       } else {
