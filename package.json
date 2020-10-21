@@ -40,11 +40,11 @@
     "test": "jasmine",
     "validate": "npm ls"
   },
-  "devDependencies": {
-    "jasmine": "^3.5.0"
-  },
   "dependencies": {
-    "moment": "^2.27.0",
+    "moment": "^2.29.1",
     "moment-timezone": "^0.5.31"
+  },
+  "devDependencies": {
+    "jasmine": "^3.6.2"
   }
 }
