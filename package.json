@@ -42,9 +42,9 @@
   },
   "dependencies": {
     "moment": "^2.29.1",
-    "moment-timezone": "^0.5.31"
+    "moment-timezone": "^0.5.32"
   },
   "devDependencies": {
-    "jasmine": "^3.6.2"
+    "jasmine": "^3.6.3"
   }
 }
