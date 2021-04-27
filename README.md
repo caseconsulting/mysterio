@@ -89,10 +89,27 @@ npm run deploy:dev
 3. Check mysterio-dev-BasecampTokenFunctionRole-1XLOPRW7GXNDP
 4. Add
 
-## Next time deploying to Test/Prod. Update the TimeSheet Function name to MonthlyHours
+## Documentation
 
-1. Go to AWS KMS console
-2. TSheets
-3. Remove mysterio-test-TimeSheetFunctionRole- from the policy
-4. Add Key users
-5. Select mysterio-test-MonthlyHoursFunctionRole-
+**AWS_SDK:**
+
+https://docs.aws.amazon.com/sdk-for-javascript/
+
+we're currently using version 2
+
+**Axios:**
+
+https://github.com/axios/axios
+
+**Lodash:**
+
+https://lodash.com/
+
+**Moment:**
+
+https://momentjs.com/docs/
+
+**Cloudformation:**
+
+https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html
+
