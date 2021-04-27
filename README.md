@@ -91,6 +91,10 @@ npm run deploy:dev
 
 ## Documentation
 
+**AWS SAM**
+
+https://docs.aws.amazon.com/serverless-application-model/
+
 **AWS_SDK:**
 
 https://docs.aws.amazon.com/sdk-for-javascript/
