@@ -70,23 +70,23 @@ npm run deploy:dev
 
 1. TSheets
 2. Key users - Add
-3. Check mysterio-dev-PTOBalancesFunctionRole-100YUP3XGFE8G
-4. Check mysterio-dev-MonthlyHoursFunctionRole-NOI0EK8L2UOZ
-5. Check mysterio-dev-JobcodesFunctionRole-B3UBOFJV1HOG
+3. Check mysterio-dev-PTOBalancesFunctionRole
+4. Check mysterio-dev-MonthlyHoursFunctionRole
+5. Check mysterio-dev-JobcodesFunctionRole
 6. Add
 
 ### Twitter
 
 1. Twitter
 2. Key users - Add
-3. Check mysterio-dev-TwitterTokenFunctionRole-N1Q2EYCZDPDC
+3. Check mysterio-dev-TwitterTokenFunctionRole
 4. Add
 
 ### Basecamp
 
 1. Basecamp
 2. Key users - Add
-3. Check mysterio-dev-BasecampTokenFunctionRole-1XLOPRW7GXNDP
+3. Check mysterio-dev-BasecampTokenFunctionRole
 4. Add
 
 ## Documentation
