@@ -264,6 +264,7 @@ async function start(event) {
       let newUserData = {};
 
       _.each(currTSheetData.results.users, (user) => {
+        console.info(JSON.stringify(user.pto_balances));
         let ptoBalancesCode = user.pto_balances;
         let ptoBalancesName = {};
 
