@@ -6,10 +6,10 @@
   "author": "Case Consulting",
   "main": "app.js",
   "dependencies": {
-    "aws-sdk": "^2.906.0",
-    "axios": "0.24.0",
+    "aws-sdk": "^2.1073.0",
+    "axios": "0.25.0",
     "lodash": "^4.17.21",
     "moment": "^2.29.1",
-    "moment-timezone": "^0.5.33"
+    "moment-timezone": "^0.5.34"
   }
 }
