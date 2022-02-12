@@ -90,7 +90,7 @@ Resources:
       CodeUri: pto-balances/
       Description: Retrieves PTO balances from TSheets API for given user
       Handler: app.handler
-      Runtime: nodejs12.x
+      Runtime: nodejs14.x
       Timeout: 30
       # Events:
       #   PTOBalances:
@@ -141,7 +141,7 @@ Resources:
       CodeUri: monthly-hours/
       Description: Retrieves time sheets from TSheets API for given user between a date range
       Handler: app.handler
-      Runtime: nodejs12.x
+      Runtime: nodejs14.x
       Timeout: 30
       # Events:
       #   MonthlyHours:
@@ -190,7 +190,7 @@ Resources:
       CodeUri: jobcodes/
       Description: Retrieves jobcodes from TSheets API
       Handler: app.handler
-      Runtime: nodejs12.x
+      Runtime: nodejs14.x
       Timeout: 30
       Policies:
         - Statement:
@@ -222,7 +222,7 @@ Resources:
       CodeUri: twitter-token/
       Description: Retrieves bearer access token for the Case Consulting Twitter account
       Handler: app.handler
-      Runtime: nodejs12.x
+      Runtime: nodejs14.x
       Timeout: 30
       Policies:
         - Statement:
@@ -254,7 +254,7 @@ Resources:
       CodeUri: basecamp-token/
       Description: Retrieves access token for the Case Consulting Basecamp Info account
       Handler: app.handler
-      Runtime: nodejs12.x
+      Runtime: nodejs14.x
       Timeout: 30
       Policies:
         - Statement:
