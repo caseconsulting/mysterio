@@ -9,7 +9,7 @@
     "aws-sdk": "^2.1073.0",
     "axios": "0.25.0",
     "lodash": "^4.17.21",
-    "moment": "^2.29.1",
+    "moment": "^2.29.2",
     "moment-timezone": "^0.5.34"
   }
 }
