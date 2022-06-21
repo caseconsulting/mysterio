@@ -5,7 +5,7 @@ const axios = require('axios');
 const _ = require('lodash');
 const ssm = require('./aws-client');
 
-moment.tz.setDefault("America/New_York");
+moment.tz.setDefault('America/New_York');
 const ISOFORMAT = 'YYYY-MM-DD';
 
 /*
@@ -35,10 +35,14 @@ async function start(event) {
   let accessToken = await getSecret('/TSheets/accessToken');
   // variables to filter tsheets api query on
   let employeeNumber = event.employeeNumber; // 10044 10020
-  // get the first day of the month in the proper format
+  // get the first day of the month
   let firstDay = moment().startOf('month').format(ISOFORMAT);
   // get last day of the month
   let lastDay = moment().endOf('month').format(ISOFORMAT);
+  // get first day of the previous month
+  let firstDayPreviousMonth = moment().subtract(1, 'months').startOf('month').format(ISOFORMAT);
+  // get last day of the previous month
+  let lastDayPreviousMonth = moment().subtract(1, 'months').endOf('month').format(ISOFORMAT);
   // get todays date
   let todayStart = moment().startOf('day');
   let todayEnd = moment().endOf('day');
@@ -121,9 +125,11 @@ async function start(event) {
 
   // loop all employees
   let previousHours = 0;
+  let previousMonthHours = 0;
   let todaysHours = 0;
   let futureHours = 0;
   let jobcodeHours = {};
+  let previousMonthJobcodeHours = {};
 
   console.info(`Getting hourly data for employee ${employeeNumber} with userId ${employeeId}`);
 
@@ -136,7 +142,7 @@ async function start(event) {
       url: 'https://rest.tsheets.com/api/v1/timesheets',
       params: {
         user_ids: employeeId,
-        start_date: firstDay,
+        start_date: firstDayPreviousMonth,
         end_date: lastDay,
         on_the_clock: 'both',
         page: page
@@ -152,12 +158,16 @@ async function start(event) {
 
     _.forEach(timeSheets, (timesheet) => {
       // get todays hours of currently clocked in time sheet
-      let duration = timesheet.duration ? timesheet.duration : moment.duration(moment().diff(moment(timesheet.start))).as('seconds');
+      let duration = timesheet.duration
+        ? timesheet.duration
+        : moment.duration(moment().diff(moment(timesheet.start))).as('seconds');
 
       // let duration = timesheet.duration;
-
-      if (moment(timesheet.date, ISOFORMAT).isBefore(todayStart)) {
-        // log previous hours (before today)
+      if (moment(timesheet.date, ISOFORMAT).isSameOrBefore(lastDayPreviousMonth)) {
+        // log previous months hours
+        previousMonthHours += duration;
+      } else if (moment(timesheet.date, ISOFORMAT).isBefore(todayStart)) {
+        // log previous hours (before today) from this month
         previousHours += duration;
       } else if (moment(timesheet.date, ISOFORMAT).isAfter(todayEnd)) {
         // log future hours (after today)''
@@ -166,11 +176,17 @@ async function start(event) {
         // log todays hours
         todaysHours += duration;
       }
-
-      // if the jobcode exists add the duration else set the jobcode duration to the current duration
-      jobcodeHours[timesheet.jobcode_id] = jobcodeHours[timesheet.jobcode_id]
-        ? jobcodeHours[timesheet.jobcode_id] + duration
-        : duration;
+      if (moment(timesheet.date, ISOFORMAT).isSameOrBefore(lastDayPreviousMonth)) {
+        // if the jobcode exists add the duration else set the jobcode duration to the current duration
+        previousMonthJobcodeHours[timesheet.jobcode_id] = previousMonthJobcodeHours[timesheet.jobcode_id]
+          ? previousMonthJobcodeHours[timesheet.jobcode_id] + duration
+          : duration;
+      } else {
+        // if the jobcode exists add the duration else set the jobcode duration to the current duration
+        jobcodeHours[timesheet.jobcode_id] = jobcodeHours[timesheet.jobcode_id]
+          ? jobcodeHours[timesheet.jobcode_id] + duration
+          : duration;
+      }
     });
 
     page++;
@@ -180,6 +196,7 @@ async function start(event) {
 
   console.info('Converting seconds to hours');
   previousHours = secondsToHours(previousHours); // convert previous hours from secs to hrs
+  previousMonthHours = secondsToHours(previousMonthHours); // convert previous month's hours from secs to hrs
   futureHours = secondsToHours(futureHours); // convert future hours from secs to hrs
   todaysHours = secondsToHours(todaysHours); // convert todays hours from secs to hrs
 
@@ -195,8 +212,22 @@ async function start(event) {
     });
   });
 
+  let previousMonthJobcodeHoursMapped = [];
+  _.forEach(previousMonthJobcodeHours, (seconds, id) => {
+    let name = jobCodesMap[id];
+    let hours = secondsToHours(seconds); // convert duration from seconds to hours
+    previousMonthJobcodeHoursMapped.push({
+      name,
+      hours
+    });
+  });
+
   // sort jobcodes by name
   jobcodeHoursMapped = _.sortBy(jobcodeHoursMapped, (jobcode) => {
+    return jobcode.name;
+  });
+
+  previousMonthJobcodeHoursMapped = _.sortBy(previousMonthJobcodeHoursMapped, (jobcode) => {
     return jobcode.name;
   });
 
@@ -207,9 +238,11 @@ async function start(event) {
     statusCode: 200,
     body: {
       previousHours,
+      previousMonthHours,
       todaysHours,
       futureHours,
-      jobcodeHours: jobcodeHoursMapped
+      jobcodeHours: jobcodeHoursMapped,
+      previousMonthJobcodeHours: previousMonthJobcodeHoursMapped
     }
   };
 }
