@@ -1,11 +1,10 @@
 // https://tsheetsteam.github.io/api_docs/?javascript--node#request-formats
 // https://tsheetsteam.github.io/api_docs/?javascript--node#timesheets
-const moment = require('moment-timezone');
 const axios = require('axios');
 const _ = require('lodash');
 const ssm = require('./aws-client');
+const dateUtils = require('./dateUtils');
 
-moment.tz.setDefault('America/New_York');
 const ISOFORMAT = 'YYYY-MM-DD';
 
 /*
@@ -36,16 +35,28 @@ async function start(event) {
   // variables to filter tsheets api query on
   let employeeNumber = event.employeeNumber; // 10044 10020
   // get the first day of the month
-  let firstDay = moment().startOf('month').format(ISOFORMAT);
+  let firstDay = dateUtils.format(dateUtils.startOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
+
   // get last day of the month
-  let lastDay = moment().endOf('month').format(ISOFORMAT);
+  let lastDay = dateUtils.format(dateUtils.endOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
+
   // get first day of the previous month
-  let firstDayPreviousMonth = moment().subtract(1, 'months').startOf('month').format(ISOFORMAT);
+  let firstDayPreviousMonth = dateUtils.format(
+    dateUtils.startOf(dateUtils.subtract(dateUtils.getTodaysDate(ISOFORMAT), 1, 'month'), 'month'),
+    null,
+    ISOFORMAT
+  );
+
   // get last day of the previous month
-  let lastDayPreviousMonth = moment().subtract(1, 'months').endOf('month').format(ISOFORMAT);
+  let lastDayPreviousMonth = dateUtils.format(
+    dateUtils.endOf(dateUtils.subtract(dateUtils.getTodaysDate(ISOFORMAT), 1, 'month'), 'month'),
+    null,
+    ISOFORMAT
+  );
+
   // get todays date
-  let todayStart = moment().startOf('day');
-  let todayEnd = moment().endOf('day');
+  let todayStart = dateUtils.startOf(dateUtils.getTodaysDate(ISOFORMAT), 'day');
+  let todayEnd = dateUtils.endOf(dateUtils.getTodaysDate(ISOFORMAT), 'day');
 
   console.info(`Obtaining hourly time charges for employee #${employeeNumber} for this month`);
 
@@ -160,23 +171,28 @@ async function start(event) {
       // get todays hours of currently clocked in time sheet
       let duration = timesheet.duration
         ? timesheet.duration
-        : moment.duration(moment().diff(moment(timesheet.start))).as('seconds');
+        : dateUtils.difference(
+            dateUtils.getTodaysDate(ISOFORMAT),
+            dateUtils.format(timesheet.start, null, 'yyyy-mm-dd hh:mm:ss'),
+            null,
+            null
+          );
 
-      // let duration = timesheet.duration;
-      if (moment(timesheet.date, ISOFORMAT).isSameOrBefore(lastDayPreviousMonth)) {
+      if (dateUtils.isSameOrBefore(dateUtils.format(timesheet.date, null, ISOFORMAT), lastDayPreviousMonth)) {
         // log previous months hours
         previousMonthHours += duration;
-      } else if (moment(timesheet.date, ISOFORMAT).isBefore(todayStart)) {
+      } else if (dateUtils.isBefore(dateUtils.format(timesheet.date, null, ISOFORMAT), todayStart)) {
         // log previous hours (before today) from this month
         previousHours += duration;
-      } else if (moment(timesheet.date, ISOFORMAT).isAfter(todayEnd)) {
+      } else if (dateUtils.isAfter(dateUtils.format(timesheet.date, null, ISOFORMAT), todayEnd)) {
         // log future hours (after today)''
         futureHours += duration;
       } else {
         // log todays hours
         todaysHours += duration;
       }
-      if (moment(timesheet.date, ISOFORMAT).isSameOrBefore(lastDayPreviousMonth)) {
+
+      if (dateUtils.isSameOrBefore(dateUtils.format(timesheet.date, null, ISOFORMAT), lastDayPreviousMonth)) {
         // if the jobcode exists add the duration else set the jobcode duration to the current duration
         previousMonthJobcodeHours[timesheet.jobcode_id] = previousMonthJobcodeHours[timesheet.jobcode_id]
           ? previousMonthJobcodeHours[timesheet.jobcode_id] + duration
