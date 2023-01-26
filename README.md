@@ -109,11 +109,10 @@ https://github.com/axios/axios
 
 https://lodash.com/
 
-**Moment:**
+**Day.js:**
 
-https://momentjs.com/docs/
+https://day.js.org/docs/en/installation/installation
 
 **Cloudformation:**
 
 https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html
-
