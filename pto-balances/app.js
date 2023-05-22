@@ -217,13 +217,17 @@ function secondsToHours(value) {
  */
 async function start(event) {
   console.info('pto-balances');
-  // get access token from parameter store
-  let accessToken = await getSecret('/TSheets/accessToken');
-
+  let accessToken = '';
   // employee numbers to filter tsheets api query on
-  let employeeNumbers = event.employeeNumber; // 10044 10020
-
-  console.info('Obtaining PTO balances for employee #', employeeNumbers);
+  let employeeNumber = event.employeeNumber; // 10044   OR   45
+  // get access token from parameter store
+  if (parseInt(employeeNumber) < 100) {
+    accessToken = await getSecret('/TSheets/FireTeam/accessToken');
+    console.info('Getting FireTeam access code with ' + employeeNumber + ' employee number');
+  } else {
+    accessToken = await getSecret('/TSheets/accessToken');
+    console.info('Getting CASE access code with ' + employeeNumber + ' employee number');
+  }
 
   let page = 1;
   let allTSheetData = {};
@@ -234,7 +238,7 @@ async function start(event) {
       method: 'GET',
       url: 'https://rest.tsheets.com/api/v1/users',
       params: {
-        employee_numbers: employeeNumbers,
+        employee_numbers: employeeNumber,
         page: page
       },
       headers: {
@@ -264,7 +268,6 @@ async function start(event) {
       let newUserData = {};
 
       _.each(currTSheetData.results.users, (user) => {
-        console.info(JSON.stringify(user.pto_balances));
         let ptoBalancesCode = user.pto_balances;
         let ptoBalancesName = {};
 

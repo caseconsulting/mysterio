@@ -30,10 +30,18 @@ function secondsToHours(value) {
  * Begin execution of Time Sheets Lambda Function
  */
 async function start(event) {
-  // get access token from parameter store
-  let accessToken = await getSecret('/TSheets/accessToken');
+  let accessToken = '';
   // variables to filter tsheets api query on
-  let employeeNumber = event.employeeNumber; // 10044 10020
+  let employeeNumber = event.employeeNumber; // 10044   OR   54
+  // get access token from parameter store
+  if (parseInt(employeeNumber) < 100) {
+    accessToken = await getSecret('/TSheets/FireTeam/accessToken');
+    console.info('Getting FireTeam access code with ' + employeeNumber + ' employee number');
+  } else {
+    accessToken = await getSecret('/TSheets/accessToken');
+    console.info('Getting CASE access code with ' + employeeNumber + ' employee number');
+  }
+
   // get the first day of the month
   let firstDay = dateUtils.format(dateUtils.startOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
 
@@ -132,7 +140,7 @@ async function start(event) {
 
     jobCodesMap = _.merge(jobCodesMap, currJobCodesMap);
     page++;
-  } while (jobCodeData.length !== 0);
+  } while (!_.isEmpty(jobCodeData));
 
   // loop all employees
   let previousHours = 0;
@@ -155,7 +163,7 @@ async function start(event) {
         user_ids: employeeId,
         start_date: firstDayPreviousMonth,
         end_date: lastDay,
-        on_the_clock: 'both',
+        //on_the_clock: 'both',
         page: page
       },
       headers: {
@@ -206,7 +214,7 @@ async function start(event) {
     });
 
     page++;
-  } while (timeSheets.length !== 0);
+  } while (!_.isEmpty(timeSheets));
 
   console.info(`Retrieved time sheet hours for employee ${employeeNumber}`);
 
