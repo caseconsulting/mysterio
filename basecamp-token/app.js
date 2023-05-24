@@ -19,10 +19,12 @@ async function getSecret(secretName) {
  */
 async function start() {
   // get basecamp token params from aws parameter store
-  let clientID = await getSecret('/Basecamp/ClientID');
-  let clientSecret = await getSecret('/Basecamp/ClientSecret');
-  let redirectURI = await getSecret('/Basecamp/RedirectURI');
-  let refreshToken = await getSecret('/Basecamp/RefreshToken');
+  let [clientID, clientSecret, redirectURI, refreshToken] = await Promise.all([
+    getSecret('/Basecamp/ClientID'),
+    getSecret('/Basecamp/ClientSecret'),
+    getSecret('/Basecamp/RedirectURI'),
+    getSecret('/Basecamp/RefreshToken')
+  ]);
   let type = 'refresh';
 
   let refreshOptions = {
