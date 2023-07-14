@@ -33,8 +33,11 @@ async function start(event) {
   let accessToken = '';
   // variables to filter tsheets api query on
   let employeeNumber = event.employeeNumber; // 10044   OR   54
+  let isFireTeam = parseInt(employeeNumber) < 100;
+  let isFirstPeriod;
   // get access token from parameter store
-  if (parseInt(employeeNumber) < 100) {
+  if (isFireTeam) {
+    isFirstPeriod = dateUtils.getDay(dateUtils.getTodaysDate()) < 16;
     accessToken = await getSecret('/TSheets/FireTeam/accessToken');
     console.info('Getting FireTeam access code with ' + employeeNumber + ' employee number');
   } else {
@@ -42,25 +45,62 @@ async function start(event) {
     console.info('Getting CASE access code with ' + employeeNumber + ' employee number');
   }
 
-  // get the first day of the month
-  let firstDay = dateUtils.format(dateUtils.startOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
+  let firstDay, lastDay, firstDayPreviousPeriod, lastDayPreviousPeriod;
 
-  // get last day of the month
-  let lastDay = dateUtils.format(dateUtils.endOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
-
-  // get first day of the previous month
-  let firstDayPreviousMonth = dateUtils.format(
-    dateUtils.startOf(dateUtils.subtract(dateUtils.getTodaysDate(ISOFORMAT), 1, 'month'), 'month'),
-    null,
-    ISOFORMAT
-  );
-
-  // get last day of the previous month
-  let lastDayPreviousMonth = dateUtils.format(
-    dateUtils.endOf(dateUtils.subtract(dateUtils.getTodaysDate(ISOFORMAT), 1, 'month'), 'month'),
-    null,
-    ISOFORMAT
-  );
+  if (isFireTeam) {
+    if (isFirstPeriod) {
+      // get first day of the month
+      firstDay = dateUtils.format(dateUtils.setDay(dateUtils.getTodaysDate(ISOFORMAT), 1), null, ISOFORMAT);
+      // get 15th of the month
+      lastDay = dateUtils.format(dateUtils.setDay(dateUtils.getTodaysDate(ISOFORMAT), 15), null, ISOFORMAT);
+      // get the 16th day of the previous  month
+      firstDayPreviousPeriod = dateUtils.format(
+        dateUtils.setDay(dateUtils.subtract(dateUtils.getTodaysDate(ISOFORMAT), 1, 'month'), 16),
+        null,
+        ISOFORMAT
+      );
+      // get last day of the previous month
+      lastDayPreviousPeriod = dateUtils.format(
+        dateUtils.endOf(dateUtils.subtract(dateUtils.getTodaysDate(ISOFORMAT), 1, 'month'), 'month'),
+        null,
+        ISOFORMAT
+      );
+    } else {
+      // get 16th of the month
+      firstDay = dateUtils.format(dateUtils.setDay(dateUtils.getTodaysDate(ISOFORMAT), 16), null, ISOFORMAT);
+      // get last day of the month
+      lastDay = dateUtils.format(dateUtils.endOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
+      // get the first day of the month
+      firstDayPreviousPeriod = dateUtils.format(
+        dateUtils.setDay(dateUtils.getTodaysDate(ISOFORMAT), 1),
+        null,
+        ISOFORMAT
+      );
+      // get the 15th of the month
+      lastDayPreviousPeriod = dateUtils.format(
+        dateUtils.setDay(dateUtils.getTodaysDate(ISOFORMAT), 15),
+        null,
+        ISOFORMAT
+      );
+    }
+  } else {
+    // get the first day of the month
+    firstDay = dateUtils.format(dateUtils.startOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
+    // get last day of the month
+    lastDay = dateUtils.format(dateUtils.endOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
+    // get first day of the previous month
+    firstDayPreviousPeriod = dateUtils.format(
+      dateUtils.startOf(dateUtils.subtract(dateUtils.getTodaysDate(ISOFORMAT), 1, 'month'), 'month'),
+      null,
+      ISOFORMAT
+    );
+    // get last day of the previous month
+    lastDayPreviousPeriod = dateUtils.format(
+      dateUtils.endOf(dateUtils.subtract(dateUtils.getTodaysDate(ISOFORMAT), 1, 'month'), 'month'),
+      null,
+      ISOFORMAT
+    );
+  }
 
   // get todays date
   let todayStart = dateUtils.startOf(dateUtils.getTodaysDate(ISOFORMAT), 'day');
@@ -68,13 +108,13 @@ async function start(event) {
 
   console.info(`Obtaining hourly time charges for employee #${employeeNumber} for this month`);
 
-  console.info(`Getting user data`);
+  console.info('Getting user data');
 
   let employeeNums = employeeNumber.split(',');
   if (employeeNums.length < 1) {
-    throw new Error(`Missing employee number`);
+    throw new Error('Missing employee number');
   } else if (employeeNums.length > 1) {
-    throw new Error(`Cannot query more than 1 employee number`);
+    throw new Error('Cannot query more than 1 employee number');
   }
 
   // set userOptions for TSheet API call
@@ -112,7 +152,7 @@ async function start(event) {
     return jobCode.name;
   });
 
-  console.info(`Getting job code data`);
+  console.info('Getting job code data');
 
   let page = 1;
   let jobCodeData = [];
@@ -144,11 +184,11 @@ async function start(event) {
 
   // loop all employees
   let previousHours = 0;
-  let previousMonthHours = 0;
+  let previousPeriodHours = 0;
   let todaysHours = 0;
   let futureHours = 0;
   let jobcodeHours = {};
-  let previousMonthJobcodeHours = {};
+  let previousPeriodJobcodeHours = {};
 
   console.info(`Getting hourly data for employee ${employeeNumber} with userId ${employeeId}`);
 
@@ -161,7 +201,7 @@ async function start(event) {
       url: 'https://rest.tsheets.com/api/v1/timesheets',
       params: {
         user_ids: employeeId,
-        start_date: firstDayPreviousMonth,
+        start_date: firstDayPreviousPeriod,
         end_date: lastDay,
         //on_the_clock: 'both',
         page: page
@@ -186,9 +226,9 @@ async function start(event) {
             null
           );
 
-      if (dateUtils.isSameOrBefore(dateUtils.format(timesheet.date, null, ISOFORMAT), lastDayPreviousMonth)) {
+      if (dateUtils.isSameOrBefore(dateUtils.format(timesheet.date, null, ISOFORMAT), lastDayPreviousPeriod)) {
         // log previous months hours
-        previousMonthHours += duration;
+        previousPeriodHours += duration;
       } else if (dateUtils.isBefore(dateUtils.format(timesheet.date, null, ISOFORMAT), todayStart)) {
         // log previous hours (before today) from this month
         previousHours += duration;
@@ -200,10 +240,10 @@ async function start(event) {
         todaysHours += duration;
       }
 
-      if (dateUtils.isSameOrBefore(dateUtils.format(timesheet.date, null, ISOFORMAT), lastDayPreviousMonth)) {
+      if (dateUtils.isSameOrBefore(dateUtils.format(timesheet.date, null, ISOFORMAT), lastDayPreviousPeriod)) {
         // if the jobcode exists add the duration else set the jobcode duration to the current duration
-        previousMonthJobcodeHours[timesheet.jobcode_id] = previousMonthJobcodeHours[timesheet.jobcode_id]
-          ? previousMonthJobcodeHours[timesheet.jobcode_id] + duration
+        previousPeriodJobcodeHours[timesheet.jobcode_id] = previousPeriodJobcodeHours[timesheet.jobcode_id]
+          ? previousPeriodJobcodeHours[timesheet.jobcode_id] + duration
           : duration;
       } else {
         // if the jobcode exists add the duration else set the jobcode duration to the current duration
@@ -220,7 +260,7 @@ async function start(event) {
 
   console.info('Converting seconds to hours');
   previousHours = secondsToHours(previousHours); // convert previous hours from secs to hrs
-  previousMonthHours = secondsToHours(previousMonthHours); // convert previous month's hours from secs to hrs
+  previousPeriodHours = secondsToHours(previousPeriodHours); // convert previous month's hours from secs to hrs
   futureHours = secondsToHours(futureHours); // convert future hours from secs to hrs
   todaysHours = secondsToHours(todaysHours); // convert todays hours from secs to hrs
 
@@ -237,7 +277,7 @@ async function start(event) {
   });
 
   let previousMonthJobcodeHoursMapped = [];
-  _.forEach(previousMonthJobcodeHours, (seconds, id) => {
+  _.forEach(previousPeriodJobcodeHours, (seconds, id) => {
     let name = jobCodesMap[id];
     let hours = secondsToHours(seconds); // convert duration from seconds to hours
     previousMonthJobcodeHoursMapped.push({
@@ -262,7 +302,7 @@ async function start(event) {
     statusCode: 200,
     body: {
       previousHours,
-      previousMonthHours,
+      previousPeriodHours,
       todaysHours,
       futureHours,
       jobcodeHours: jobcodeHoursMapped,
