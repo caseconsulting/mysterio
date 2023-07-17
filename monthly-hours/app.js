@@ -276,11 +276,11 @@ async function start(event) {
     });
   });
 
-  let previousMonthJobcodeHoursMapped = [];
+  let previousPeriodJobcodeHoursMapped = [];
   _.forEach(previousPeriodJobcodeHours, (seconds, id) => {
     let name = jobCodesMap[id];
     let hours = secondsToHours(seconds); // convert duration from seconds to hours
-    previousMonthJobcodeHoursMapped.push({
+    previousPeriodJobcodeHoursMapped.push({
       name,
       hours
     });
@@ -291,7 +291,7 @@ async function start(event) {
     return jobcode.name;
   });
 
-  previousMonthJobcodeHoursMapped = _.sortBy(previousMonthJobcodeHoursMapped, (jobcode) => {
+  previousPeriodJobcodeHoursMapped = _.sortBy(previousPeriodJobcodeHoursMapped, (jobcode) => {
     return jobcode.name;
   });
 
@@ -306,7 +306,7 @@ async function start(event) {
       todaysHours,
       futureHours,
       jobcodeHours: jobcodeHoursMapped,
-      previousMonthJobcodeHours: previousMonthJobcodeHoursMapped
+      previousPeriodJobcodeHours: previousPeriodJobcodeHoursMapped
     }
   };
 }
