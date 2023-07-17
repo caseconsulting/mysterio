@@ -1,0 +1,12 @@
+{
+  "name": "bamboohr-employees",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Retrieves employees with a list of parameters from BambooHR",
+  "author": "Case Consulting",
+  "main": "app.js",
+  "dependencies": {
+    "aws-sdk": "2.1268.0",
+    "axios": "0.27.2"
+  }
+}

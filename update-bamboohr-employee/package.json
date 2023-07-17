@@ -1,0 +1,12 @@
+{
+  "name": "update-bamboohr-employee",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Updates an employee in BambooHR with an object of key values",
+  "author": "Case Consulting",
+  "main": "app.js",
+  "dependencies": {
+    "aws-sdk": "2.1268.0",
+    "axios": "0.27.2"
+  }
+}

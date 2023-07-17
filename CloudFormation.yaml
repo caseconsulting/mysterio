@@ -48,40 +48,8 @@ Globals:
         STAGE: !Ref Stage
 
 Resources:
-  # APIInvokeRole:
-  #   Type: AWS::IAM::Role
-  #   Properties:
-  #     RoleName: !Join
-  #       - ''
-  #       - - mysterio-api-invoke-
-  #         - !Ref Stage
-  #     AssumeRolePolicyDocument:
-  #       Version: 2012-10-17
-  #       Statement:
-  #         - Effect: Allow
-  #           Principal:
-  #             Service:
-  #               - apigateway.amazonaws.com
-  #           Action:
-  #             - 'sts:AssumeRole'
-  #     Path: /
-  #     Policies:
-  #       - PolicyName: InvokeAPI
-  #         PolicyDocument:
-  #           Version: '2012-10-17'
-  #           Statement:
-  #             - Effect: Allow
-  #               Action: 'execute-api:Invoke'
-  #               Resource: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:*:*
-  #     Tags:
-  #       - Key: Application
-  #         Value: mysterio
-  #       - Key: Stage
-  #         Value: !Ref Stage
   PTOBalancesFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
-    # DependsOn:
-    #   - APIInvokeRole
     Properties:
       FunctionName: !Join
         - ''
@@ -92,14 +60,6 @@ Resources:
       Handler: app.handler
       Runtime: nodejs18.x
       Timeout: 30
-      # Events:
-      #   PTOBalances:
-      #     Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
-      #     Properties:
-      #       Path: /pto-balances/{employeeNumber}
-      #       Method: get
-      #       Auth:
-      #         InvokeRole: !GetAtt APIInvokeRole.Arn
       Policies:
         - Statement:
             - Action:
@@ -122,19 +82,74 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${PTOBalancesFunction}
       RetentionInDays: 30
-  # ApiLogGroup:
-  #   Type: AWS::Logs::LogGroup
-  #   DependsOn:
-  #     - PTOBalancesFunction
-  #   Properties:
-  #     LogGroupName: !Sub
-  #       - /aws/apigateway/mysterio-${stageName}
-  #       - stageName: !Ref Stage
-  #     RetentionInDays: 30
+  BambooHREmployeesFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: !Join
+        - ''
+        - - mysterio-bamboohr-employees-
+          - !Ref Stage
+      CodeUri: bamboohr-employees/
+      Description: Retrieves BambooHR employees from the BambooHR API with all of the specified parameter fields
+      Handler: app.handler
+      Runtime: nodejs18.x
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/BambooHR/APIKey
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
+  BambooHREmployeesFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - BambooHREmployeesFunction
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${BambooHREmployeesFunction}
+      RetentionInDays: 30
+  UpdateBambooHREmployeeFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: !Join
+        - ''
+        - - mysterio-update-bamboohr-employee-
+          - !Ref Stage
+      CodeUri: update-bamboohr-employee/
+      Description: Updates a BambooHR employee via the BambooHR API for all of the specified keys and values
+      Handler: app.handler
+      Runtime: nodejs18.x
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/BambooHR/APIKey
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
+  UpdateBambooHREmployeeFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - UpdateBambooHREmployeeFunction
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${UpdateBambooHREmployeeFunction}
+      RetentionInDays: 30
   MonthlyHoursFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
-    # DependsOn:
-    #   - APIInvokeRole
     Properties:
       FunctionName: !Join
         - ''
@@ -145,14 +160,6 @@ Resources:
       Handler: app.handler
       Runtime: nodejs18.x
       Timeout: 30
-      # Events:
-      #   MonthlyHours:
-      #     Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
-      #     Properties:
-      #       Path: /monthly-hours/{employeeNumber}/{startDate}/{endDate}
-      #       Method: get
-      #       Auth:
-      #         InvokeRole: !GetAtt APIInvokeRole.Arn
       Policies:
         - Statement:
             - Action:
@@ -175,15 +182,6 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${MonthlyHoursFunction}
       RetentionInDays: 30
-  # ApiLogGroup:
-  #   Type: AWS::Logs::LogGroup
-  #   DependsOn:
-  #     - MonthlyHoursFunction
-  #   Properties:
-  #     LogGroupName: !Sub
-  #       - /aws/apigateway/mysterio-${stageName}
-  #       - stageName: !Ref Stage
-  #     RetentionInDays: 30
   JobcodesFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
@@ -285,27 +283,18 @@ Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
   # Find out more about other implicit resources you can reference within SAM
   # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
-  # PTOBalancesApi:
-  #   Description: 'API Gateway endpoint URL for Prod stage'
-  #   Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/pto-balances/'
   PTOBalancesFunction:
     Description: 'PTO Balances Lambda Function ARN'
     Value: !GetAtt PTOBalancesFunction.Arn
   PTOBalancesFunctionIamRole:
     Description: 'Implicit IAM Role created for PTO Balances function'
     Value: !GetAtt PTOBalancesFunctionRole.Arn
-  # MonthlyHoursApi:
-  #   Description: 'API Gateway endpoint URL for Prod stage'
-  #   Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/monthly-hours/'
   MonthlyHoursFunction:
     Description: 'Time Sheets Lambda Function ARN'
     Value: !GetAtt MonthlyHoursFunction.Arn
   MonthlyHoursFunctionIamRole:
     Description: 'Implicit IAM Role created for Time Sheets function'
     Value: !GetAtt MonthlyHoursFunctionRole.Arn
-  # JobcodesApi:
-  #   Description: 'API Gateway endpoint URL for Prod stage'
-  #   Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/jobcodes/'
   JobcodesFunction:
     Description: 'Jobcodes Lambda Function ARN'
     Value: !GetAtt JobcodesFunction.Arn
