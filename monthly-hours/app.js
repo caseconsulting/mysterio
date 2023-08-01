@@ -2,7 +2,8 @@
 // https://tsheetsteam.github.io/api_docs/?javascript--node#timesheets
 const axios = require('axios');
 const _ = require('lodash');
-const ssm = require('./aws-client');
+const { SSMClient, GetParamterCommand } = require('@aws-sdk/client-ssm');
+const ssmClient = new SSMClient({region: 'us-east-1'});
 const dateUtils = require('./dateUtils');
 
 const ISOFORMAT = 'YYYY-MM-DD';
@@ -15,7 +16,7 @@ async function getSecret(secretName) {
     Name: secretName,
     WithDecryption: true
   };
-  const result = await ssm.getParameter(params).promise();
+  const result = await ssmClient.send(new GetParamterCommand(params));
   return result.Parameter.Value;
 }
 

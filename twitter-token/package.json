@@ -6,6 +6,6 @@
   "author": "Case Consulting",
   "main": "app.js",
   "dependencies": {
-    "aws-sdk": "2.1268.0"
+    "@aws-sdk/client-ssm": "3.379.1"
   }
 }

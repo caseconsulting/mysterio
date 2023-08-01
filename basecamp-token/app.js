@@ -1,6 +1,6 @@
 const axios = require('axios');
-// const _ = require('lodash');
-const ssm = require('./aws-client');
+const { SSMClient, GetParamterCommand } = require('@aws-sdk/client-ssm');
+const ssmClient = new SSMClient({region: 'us-east-1'});
 
 /*
  * Access system manager parameter store and return secret value of the given name.
@@ -10,7 +10,7 @@ async function getSecret(secretName) {
     Name: secretName,
     WithDecryption: true
   };
-  const result = await ssm.getParameter(params).promise();
+  const result = await ssmClient.send(new GetParamterCommand(params));
   return result.Parameter.Value;
 }
 
