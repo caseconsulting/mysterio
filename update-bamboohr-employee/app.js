@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { SSMClient, GetParamterCommand } = require('@aws-sdk/client-ssm');
+const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 const ssmClient = new SSMClient({region: 'us-east-1'});
 
 /*
@@ -10,7 +10,7 @@ async function getSecret(secretName) {
     Name: secretName,
     WithDecryption: true
   };
-  const result = await ssmClient.send(new GetParamterCommand(params));
+  const result = await ssmClient.send(new GetParameterCommand(params));
   return result.Parameter.Value;
 }
 
