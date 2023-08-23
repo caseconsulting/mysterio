@@ -278,6 +278,76 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${BasecampTokenFunction}
       RetentionInDays: 30
+  ADPTokenFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: !Join
+        - ''
+        - - mysterio-adp-token-
+          - !Ref Stage
+      CodeUri: adp-token/
+      Description: Retrieves access token for the CASE ADP API Central account
+      Handler: app.handler
+      Runtime: nodejs18.x
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/ADP/*
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
+  ADPTokenFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - ADPTokenFunction
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ADPTokenFunction}
+      RetentionInDays: 30
+  ADPEmployeesFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: !Join
+        - ''
+        - - mysterio-adp-employees-
+          - !Ref Stage
+      CodeUri: adp-employees/
+      Description: Retrieves all ADP employees under the CASE account
+      Handler: app.handler
+      Runtime: nodejs18.x
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/ADP/*
+        - Statement:
+            - Action:
+                - lambda:InvokeFunction
+                - lambda:InvokeAsync
+              Effect: Allow
+              Resource: '*'
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
+  ADPEmployeesFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - ADPEmployeesFunction
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ADPEmployeesFunction}
+      RetentionInDays: 30
 
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
@@ -313,3 +383,6 @@ Outputs:
   BasecampTokenFunctionIamRole:
     Description: 'Implicit IAM Role created for Basecamp Token function'
     Value: !GetAtt BasecampTokenFunctionRole.Arn
+  ADPTokenFunction:
+    Description: 'ADP Token Lambda Function ARN'
+    Value: !GetAtt ADPTokenFunction.Arn
