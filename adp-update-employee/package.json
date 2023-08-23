@@ -1,0 +1,13 @@
+{
+  "name": "adp-token",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Generates a new access token to access the CASE ADP Central API",
+  "author": "Case Consulting",
+  "main": "app.js",
+  "dependencies": {
+    "@aws-sdk/client-ssm": "3.379.1",
+    "@aws-sdk/client-lambda": "3.370",
+    "axios": "0.27.2"
+  }
+}

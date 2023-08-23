@@ -348,6 +348,44 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${ADPEmployeesFunction}
       RetentionInDays: 30
+  ADPUpdateEmployeeFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: !Join
+        - ''
+        - - mysterio-adp-update-employee-
+          - !Ref Stage
+      CodeUri: adp-update-employee/
+      Description: Updates an employee on ADP
+      Handler: app.handler
+      Runtime: nodejs18.x
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/ADP/*
+        - Statement:
+            - Action:
+                - lambda:InvokeFunction
+                - lambda:InvokeAsync
+              Effect: Allow
+              Resource: '*'
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
+  ADPUpdateEmployeeFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - ADPUpdateEmployeeFunction
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ADPUpdateEmployeeFunction}
+      RetentionInDays: 30
 
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function

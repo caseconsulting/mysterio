@@ -48,7 +48,7 @@ async function getADPAccessToken() {
 /*
  * Begin execution of BambooHR Employees Lambda Function
  */
-async function start() {
+async function start(event) {
   console.info('Getting ADP access token and SSL certificate for CASE API Central account');
   // get ADP credentials from aws parameter store
   // note: access token lasts 60 minutes
@@ -57,6 +57,9 @@ async function start() {
     getSecret('/ADP/SSLCert'),
     getSecret('/ADP/SSLKey')
   ]);
+
+  let updateUrl = event.updateUrl;
+  let employeeData = event.employeeData;
 
   // ADP requires certificate signing with each API call
   fs.writeFileSync('/tmp/ssl_cert.pem', cert);
@@ -68,17 +71,18 @@ async function start() {
   });
 
   const options = {
-    method: 'GET',
-    url: 'https://api.adp.com/hr/v2/workers?$top=5000',
+    method: 'POST',
+    url: updateUrl,
     headers: { Authorization: `Bearer ${accessToken}` },
+    data: employeeData,
     httpsAgent: httpsAgent
   };
 
   try {
     const result = await axios(options);
-    // return the ADP employees
+    // return the data from updating an employee
     console.info('Returning all ADP employee data');
-    return { statusCode: 200, body: result.data.workers };
+    return { statusCode: 200, body: result.data };
   } catch (err) {
     console.info('Error retrieving ADP employees: ' + err);
     return { statusCode: 400, body: err.stack };

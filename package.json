@@ -21,7 +21,7 @@
     "package:dev": "sam package --region us-east-1 --s3-bucket case-consulting-sam-deployments-dev --s3-prefix mysterio-dev --output-template-file packaged.yaml",
     "package:test": "sam package --region us-east-1 --s3-bucket case-consulting-sam-deployments-dev --s3-prefix mysterio-test --output-template-file packaged.yaml",
     "package:prod": "sam package --region us-east-1 --s3-bucket case-consulting-sam-deployments-prod --s3-prefix mysterio-prod --output-template-file packaged.yaml --profile prod",
-    "reinstall": "npm ci && cd basecamp-token && npm ci && cd ../jobcodes && npm ci && cd ../pto-balances && npm ci && cd ../monthly-hours && npm ci && cd ../twitter-token && npm ci && cd ../bamboohr-employees && npm ci && cd ../update-bamboohr-employee && npm ci && cd ../adp-token && npm ci && cd ../adp-employees && npm ci",
+    "reinstall": "npm ci && cd basecamp-token && npm ci && cd ../jobcodes && npm ci && cd ../pto-balances && npm ci && cd ../monthly-hours && npm ci && cd ../twitter-token && npm ci && cd ../bamboohr-employees && npm ci && cd ../update-bamboohr-employee && npm ci && cd ../adp-token && npm ci && cd ../adp-employees && npm ci && cd ../adp-update-employee && npm ci",
     "tail:dev:basecamp-token": "sam logs -n BasecampTokenFunction --stack-name mysterio-dev --tail",
     "tail:dev:jobcodes": "sam logs -n JobcodesFunction --stack-name mysterio-dev --tail",
     "tail:dev:pto-balances": "sam logs -n PTOBalancesFunction --stack-name mysterio-dev --tail",
