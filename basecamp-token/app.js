@@ -1,6 +1,6 @@
 const axios = require('axios');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
-const ssmClient = new SSMClient({region: 'us-east-1'});
+const ssmClient = new SSMClient({ region: 'us-east-1' });
 
 /*
  * Access system manager parameter store and return secret value of the given name.
@@ -53,7 +53,6 @@ async function start() {
 
 /**
  *
- * Event doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-input-format
  * @param {Object} event - API Gateway Lambda Proxy Input Format
  *
  * Context doc: https://docs.aws.amazon.com/lambda/latest/dg/nodejs-prog-model-context.html

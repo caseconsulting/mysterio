@@ -4,11 +4,5 @@
   "private": true,
   "description": "Retrieves time sheets from TSheets API for given user between a date range",
   "author": "Case Consulting",
-  "main": "app.js",
-  "dependencies": {
-    "@aws-sdk/client-ssm": "3.379.1",
-    "axios": "0.27.2",
-    "dayjs": "1.11.7",
-    "lodash": "4.17.21"
-  }
+  "main": "app.js"
 }

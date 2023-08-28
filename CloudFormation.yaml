@@ -58,6 +58,9 @@ Resources:
       CodeUri: pto-balances/
       Description: Retrieves PTO balances from TSheets API for given user
       Handler: app.handler
+      Layers:
+        - !Ref DependenciesLayer
+        - !Ref SharedLayer
       Runtime: nodejs18.x
       Timeout: 30
       Policies:
@@ -92,6 +95,9 @@ Resources:
       CodeUri: bamboohr-employees/
       Description: Retrieves BambooHR employees from the BambooHR API with all of the specified parameter fields
       Handler: app.handler
+      Layers:
+        - !Ref DependenciesLayer
+        - !Ref SharedLayer
       Runtime: nodejs18.x
       Timeout: 30
       Policies:
@@ -125,6 +131,9 @@ Resources:
       CodeUri: update-bamboohr-employee/
       Description: Updates a BambooHR employee via the BambooHR API for all of the specified keys and values
       Handler: app.handler
+      Layers:
+        - !Ref DependenciesLayer
+        - !Ref SharedLayer
       Runtime: nodejs18.x
       Timeout: 30
       Policies:
@@ -158,6 +167,9 @@ Resources:
       CodeUri: monthly-hours/
       Description: Retrieves time sheets from TSheets API for given user between a date range
       Handler: app.handler
+      Layers:
+        - !Ref DependenciesLayer
+        - !Ref SharedLayer
       Runtime: nodejs18.x
       Timeout: 30
       Policies:
@@ -192,6 +204,9 @@ Resources:
       CodeUri: jobcodes/
       Description: Retrieves jobcodes from TSheets API
       Handler: app.handler
+      Layers:
+        - !Ref DependenciesLayer
+        - !Ref SharedLayer
       Runtime: nodejs18.x
       Timeout: 30
       Policies:
@@ -214,38 +229,6 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${JobcodesFunction}
       RetentionInDays: 30
-  TwitterTokenFunction:
-    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
-    Properties:
-      FunctionName: !Join
-        - ''
-        - - mysterio-twitter-token-
-          - !Ref Stage
-      CodeUri: twitter-token/
-      Description: Retrieves bearer access token for the Case Consulting Twitter account
-      Handler: app.handler
-      Runtime: nodejs18.x
-      Timeout: 30
-      Policies:
-        - Statement:
-            - Action:
-                - ssm:GetParameter*
-              Effect: Allow
-              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/Twitter/accessToken
-        - Statement:
-            - Action:
-                - logs:CreateLogGroup
-                - logs:CreateLogStream
-                - logs:PutLogEvents
-              Effect: Allow
-              Resource: '*'
-  TwitterTokenFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    DependsOn:
-      - TwitterTokenFunction
-    Properties:
-      LogGroupName: !Sub /aws/lambda/${TwitterTokenFunction}
-      RetentionInDays: 30
   BasecampTokenFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
@@ -256,6 +239,9 @@ Resources:
       CodeUri: basecamp-token/
       Description: Retrieves access token for the Case Consulting Basecamp Info account
       Handler: app.handler
+      Layers:
+        - !Ref DependenciesLayer
+        - !Ref SharedLayer
       Runtime: nodejs18.x
       Timeout: 30
       Policies:
@@ -288,6 +274,9 @@ Resources:
       CodeUri: adp-token/
       Description: Retrieves access token for the CASE ADP API Central account
       Handler: app.handler
+      Layers:
+        - !Ref DependenciesLayer
+        - !Ref SharedLayer
       Runtime: nodejs18.x
       Timeout: 30
       Policies:
@@ -320,6 +309,9 @@ Resources:
       CodeUri: adp-employees/
       Description: Retrieves all ADP employees under the CASE account
       Handler: app.handler
+      Layers:
+        - !Ref DependenciesLayer
+        - !Ref SharedLayer
       Runtime: nodejs18.x
       Timeout: 30
       Policies:
@@ -358,6 +350,9 @@ Resources:
       CodeUri: adp-update-employee/
       Description: Updates an employee on ADP
       Handler: app.handler
+      Layers:
+        - !Ref DependenciesLayer
+        - !Ref SharedLayer
       Runtime: nodejs18.x
       Timeout: 30
       Policies:
@@ -386,6 +381,30 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${ADPUpdateEmployeeFunction}
       RetentionInDays: 30
+  DependenciesLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Join
+        - ''
+        - - mysterio-dependencies-
+          - !Ref Stage
+      Description: Packages for lambda functions.
+      ContentUri: layers/dependencies
+      CompatibleRuntimes:
+        - nodejs18.x
+      RetentionPolicy: Retain
+  SharedLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Join
+        - ''
+        - - mysterio-shared-
+          - !Ref Stage
+      Description: Shared code for lambda functions.
+      ContentUri: layers/shared
+      CompatibleRuntimes:
+        - nodejs18.x
+      RetentionPolicy: Retain
 
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
@@ -409,12 +428,6 @@ Outputs:
   JobcodesFunctionIamRole:
     Description: 'Implicit IAM Role created for Jobcodes function'
     Value: !GetAtt JobcodesFunctionRole.Arn
-  TwitterTokenFunction:
-    Description: 'Twitter Token Lambda Function ARN'
-    Value: !GetAtt TwitterTokenFunction.Arn
-  TwitterTokenFunctionIamRole:
-    Description: 'Implicit IAM Role created for Twitter Token function'
-    Value: !GetAtt TwitterTokenFunctionRole.Arn
   BasecampTokenFunction:
     Description: 'Basecamp Token Lambda Function ARN'
     Value: !GetAtt BasecampTokenFunction.Arn

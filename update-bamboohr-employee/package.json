@@ -4,9 +4,5 @@
   "private": true,
   "description": "Updates an employee in BambooHR with an object of key values",
   "author": "Case Consulting",
-  "main": "app.js",
-  "dependencies": {
-    "@aws-sdk/client-ssm": "3.379.1",
-    "axios": "0.27.2"
-  }
+  "main": "app.js"
 }

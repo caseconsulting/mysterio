@@ -3,8 +3,8 @@
 const axios = require('axios');
 const _ = require('lodash');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
-const ssmClient = new SSMClient({region: 'us-east-1'});
-const dateUtils = require('./dateUtils');
+const ssmClient = new SSMClient({ region: 'us-east-1' });
+const dateUtils = require('dateUtils'); // from shared lambda layer
 
 const ISOFORMAT = 'YYYY-MM-DD';
 
@@ -46,12 +46,13 @@ async function start(event) {
     console.info('Getting CASE access code with ' + employeeNumber + ' employee number');
   }
 
-  let firstDay, lastDay, firstDayPreviousPeriod, lastDayPreviousPeriod;
+  //let firstDay;
+  let lastDay, firstDayPreviousPeriod, lastDayPreviousPeriod;
 
   if (isFireTeam) {
     if (isFirstPeriod) {
       // get first day of the month
-      firstDay = dateUtils.format(dateUtils.setDay(dateUtils.getTodaysDate(ISOFORMAT), 1), null, ISOFORMAT);
+      // firstDay = dateUtils.format(dateUtils.setDay(dateUtils.getTodaysDate(ISOFORMAT), 1), null, ISOFORMAT);
       // get 15th of the month
       lastDay = dateUtils.format(dateUtils.setDay(dateUtils.getTodaysDate(ISOFORMAT), 15), null, ISOFORMAT);
       // get the 16th day of the previous  month
@@ -68,7 +69,7 @@ async function start(event) {
       );
     } else {
       // get 16th of the month
-      firstDay = dateUtils.format(dateUtils.setDay(dateUtils.getTodaysDate(ISOFORMAT), 16), null, ISOFORMAT);
+      // firstDay = dateUtils.format(dateUtils.setDay(dateUtils.getTodaysDate(ISOFORMAT), 16), null, ISOFORMAT);
       // get last day of the month
       lastDay = dateUtils.format(dateUtils.endOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
       // get the first day of the month
@@ -86,7 +87,7 @@ async function start(event) {
     }
   } else {
     // get the first day of the month
-    firstDay = dateUtils.format(dateUtils.startOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
+    // firstDay = dateUtils.format(dateUtils.startOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
     // get last day of the month
     lastDay = dateUtils.format(dateUtils.endOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
     // get first day of the previous month
@@ -146,7 +147,7 @@ async function start(event) {
   console.info(`EmployeeId: ${employeeId}`);
 
   // get data for employee id
-  let employeeData = employeeRequest.data.results.users[employeeId];
+  // let employeeData = employeeRequest.data.results.users[employeeId];
 
   // create a map from job code to job name
   let jobCodesMap = _.mapValues(employeeRequest.data.supplemental_data.jobcodes, (jobCode) => {
@@ -218,14 +219,17 @@ async function start(event) {
 
     _.forEach(timeSheets, (timesheet) => {
       // get todays hours of currently clocked in time sheet
-      let duration = timesheet.duration
-        ? timesheet.duration
-        : dateUtils.difference(
-            dateUtils.getTodaysDate(ISOFORMAT),
-            dateUtils.format(timesheet.start, null, 'yyyy-mm-dd hh:mm:ss'),
-            null,
-            null
-          );
+      let duration;
+      if (timesheet.duration) {
+        duration = timesheet.duration;
+      } else {
+        duration = dateUtils.difference(
+          dateUtils.getTodaysDate(ISOFORMAT),
+          dateUtils.format(timesheet.start, null, 'yyyy-mm-dd hh:mm:ss'),
+          null,
+          null
+        );
+      }
 
       if (dateUtils.isSameOrBefore(dateUtils.format(timesheet.date, null, ISOFORMAT), lastDayPreviousPeriod)) {
         // log previous months hours
@@ -314,7 +318,6 @@ async function start(event) {
 
 /**
  *
- * Event doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-input-format
  * @param {Object} event - API Gateway Lambda Proxy Input Format
  *
  * Context doc: https://docs.aws.amazon.com/lambda/latest/dg/nodejs-prog-model-context.html
@@ -324,7 +327,7 @@ async function start(event) {
  * @returns {Object} object - API Gateway Lambda Proxy Output Format
  *
  */
-async function handler(event, context) {
+async function handler(event) {
   return start(event);
 }
 

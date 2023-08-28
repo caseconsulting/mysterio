@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "dateUtils": "file:js/dateUtils.js"
+  }
+}

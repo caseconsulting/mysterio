@@ -1,7 +1,7 @@
 const axios = require('axios');
 const _ = require('lodash');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
-const ssmClient = new SSMClient({region: 'us-east-1'});
+const ssmClient = new SSMClient({ region: 'us-east-1' });
 
 // /*
 //  * Sample dataset from TSheet API
@@ -298,7 +298,7 @@ async function start(event) {
   } while (!_.isEmpty(currTSheetData.results.users));
 
   if (_.isEmpty(allTSheetData.results.users)) {
-    throw new Error(`No users found with employee number ${employeeNumbers}`);
+    throw new Error(`No users found with employee number ${employeeNumber}`);
   }
 
   // return the filtered dataset response
@@ -311,7 +311,6 @@ async function start(event) {
 
 /**
  *
- * Event doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-input-format
  * @param {Object} event - API Gateway Lambda Proxy Input Format
  *
  * Context doc: https://docs.aws.amazon.com/lambda/latest/dg/nodejs-prog-model-context.html
