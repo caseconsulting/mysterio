@@ -34,6 +34,7 @@ async function start(event) {
     data: body
   };
   let result = await axios(options);
+  result = result.data;
   // return the result of updating a BambooHR employee
   console.info('Returning BambooHR employee update result');
   return { result };
