@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
+const { asyncForEach } = require('utils');
 const ssmClient = new SSMClient({ region: 'us-east-1' });
 
 /*
@@ -23,6 +24,7 @@ async function start(event) {
   let key = await getSecret('/BambooHR/APIKey');
   let id = event.id;
   let body = event.body;
+  let tabularData = event.tabularData;
 
   const options = {
     method: 'POST',
@@ -34,6 +36,22 @@ async function start(event) {
     data: body
   };
   let result = await axios(options);
+
+  // add a tabular data record from the object passed from the portal data sync function
+  await asyncForEach(tabularData, async (tabularRecord) => {
+    let table = tabularRecord.table;
+    let body = tabularRecord.body;
+    const options = {
+      method: 'POST',
+      url: `https://api.bamboohr.com/api/gateway.php/consultwithcase/v1/employees/${id}/tables/${table}`,
+      auth: {
+        username: key,
+        password: ''
+      },
+      data: body
+    };
+    await axios(options);
+  });
   result = result.data;
   // return the result of updating a BambooHR employee
   console.info('Returning BambooHR employee update result');

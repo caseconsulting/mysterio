@@ -58,34 +58,36 @@ async function start(event) {
     getSecret('/ADP/SSLKey')
   ]);
 
-  let updateUrl = event.updateUrl;
-  let employeeData = event.employeeData;
+  let data = event.data;
+  let path = event.path;
 
-  // ADP requires certificate signing with each API call
-  fs.writeFileSync('/tmp/ssl_cert.pem', cert);
-  fs.writeFileSync('/tmp/ssl_key.key', key);
+  if (data) {
+    // ADP requires certificate signing with each API call
+    fs.writeFileSync('/tmp/ssl_cert.pem', cert);
+    fs.writeFileSync('/tmp/ssl_key.key', key);
 
-  const httpsAgent = new https.Agent({
-    cert: fs.readFileSync('/tmp/ssl_cert.pem'),
-    key: fs.readFileSync('/tmp/ssl_key.key')
-  });
+    const httpsAgent = new https.Agent({
+      cert: fs.readFileSync('/tmp/ssl_cert.pem'),
+      key: fs.readFileSync('/tmp/ssl_key.key')
+    });
 
-  const options = {
-    method: 'POST',
-    url: updateUrl,
-    headers: { Authorization: `Bearer ${accessToken}` },
-    data: employeeData,
-    httpsAgent: httpsAgent
-  };
+    const options = {
+      method: 'POST',
+      url: 'https://api.adp.com' + path,
+      headers: { Authorization: `Bearer ${accessToken}` },
+      data: data,
+      httpsAgent: httpsAgent
+    };
 
-  try {
-    const result = await axios(options);
-    // return the data from updating an employee
-    console.info('Returning all ADP employee data');
-    return { statusCode: 200, body: result.data };
-  } catch (err) {
-    console.info('Error retrieving ADP employees: ' + err);
-    return { statusCode: 400, body: err.stack };
+    try {
+      const result = await axios(options);
+      // return the data from updating an employee
+      console.info('Returning all ADP employee data');
+      return { statusCode: 200, body: result.data };
+    } catch (err) {
+      console.info('Error retrieving ADP employees: ' + JSON.stringify(err.response));
+      return { statusCode: err.response.status, body: JSON.stringify(err.response.data) };
+    }
   }
 } // start
 

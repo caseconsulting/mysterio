@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "dateUtils": "file:dateUtils.js"
+    "dateUtils": "file:dateUtils.js",
+    "utils": "file:utils.js"
   }
 }

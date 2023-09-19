@@ -26,7 +26,7 @@ async function start(event) {
   const options = {
     method: 'POST',
     url: 'https://api.bamboohr.com/api/gateway.php/consultwithcase/v1/reports/custom',
-    params: { format: 'JSON', onlyCurrent: 'true' },
+    params: { format: 'JSON', onlyCurrent: 'false' },
     auth: {
       username: key,
       password: ''
