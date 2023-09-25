@@ -21,45 +21,45 @@ async function getSecret(secretName) {
  * Begin execution of BambooHR Employees Lambda Function
  */
 async function start() {
-  console.info('Getting ADP credentials for CASE API Central account');
-  // get ADP credentials from aws parameter store
-  let [clientID, clientSecret, cert, key] = await Promise.all([
-    getSecret('/ADP/ClientID'),
-    getSecret('/ADP/ClientSecret'),
-    getSecret('/ADP/SSLCert'),
-    getSecret('/ADP/SSLKey')
-  ]);
-  // ADP requires certificate signing with each API call
-  fs.writeFileSync('/tmp/ssl_cert.pem', cert);
-  fs.writeFileSync('/tmp/ssl_key.key', key);
-
-  const httpsAgent = new https.Agent({
-    cert: fs.readFileSync('/tmp/ssl_cert.pem'),
-    key: fs.readFileSync('/tmp/ssl_key.key')
-  });
-
-  let data = qs.stringify({
-    grant_type: 'client_credentials',
-    client_id: clientID,
-    client_secret: clientSecret
-  });
-
-  const options = {
-    method: 'POST',
-    url: 'https://accounts.adp.com/auth/oauth/v2/token',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    data: data,
-    httpsAgent: httpsAgent
-  };
-
   try {
+    console.info('Getting ADP credentials for CASE API Central account');
+    // get ADP credentials from aws parameter store
+    let [clientID, clientSecret, cert, key] = await Promise.all([
+      getSecret('/ADP/ClientID'),
+      getSecret('/ADP/ClientSecret'),
+      getSecret('/ADP/SSLCert'),
+      getSecret('/ADP/SSLKey')
+    ]);
+    // ADP requires certificate signing with each API call
+    fs.writeFileSync('/tmp/ssl_cert.pem', cert);
+    fs.writeFileSync('/tmp/ssl_key.key', key);
+
+    const httpsAgent = new https.Agent({
+      cert: fs.readFileSync('/tmp/ssl_cert.pem'),
+      key: fs.readFileSync('/tmp/ssl_key.key')
+    });
+
+    let data = qs.stringify({
+      grant_type: 'client_credentials',
+      client_id: clientID,
+      client_secret: clientSecret
+    });
+
+    const options = {
+      method: 'POST',
+      url: 'https://accounts.adp.com/auth/oauth/v2/token',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      data: data,
+      httpsAgent: httpsAgent
+    };
+
     const result = await axios(options);
     // return the ADP access token data
     console.info('Returning ADP access token');
     return { statusCode: 200, body: result.data.access_token }; // note: access token lasts 60 minutes
   } catch (err) {
     console.info('Error retrieving ADP access token: ' + err);
-    return { statusCode: 400, body: err.stack };
+    throw new Error(err);
   }
 }
 

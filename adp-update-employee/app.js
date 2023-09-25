@@ -49,45 +49,53 @@ async function getADPAccessToken() {
  * Begin execution of BambooHR Employees Lambda Function
  */
 async function start(event) {
-  console.info('Getting ADP access token and SSL certificate for CASE API Central account');
-  // get ADP credentials from aws parameter store
-  // note: access token lasts 60 minutes
-  let [accessToken, cert, key] = await Promise.all([
-    getADPAccessToken(),
-    getSecret('/ADP/SSLCert'),
-    getSecret('/ADP/SSLKey')
-  ]);
+  try {
+    console.info('Getting ADP access token and SSL certificate for CASE API Central account');
+    // get ADP credentials from aws parameter store
+    // note: access token lasts 60 minutes
+    let [accessToken, cert, key] = await Promise.all([
+      getADPAccessToken(),
+      getSecret('/ADP/SSLCert'),
+      getSecret('/ADP/SSLKey')
+    ]);
 
-  let data = event.data;
-  let path = event.path;
+    let updatesToMake = event.updates;
 
-  if (data) {
-    // ADP requires certificate signing with each API call
-    fs.writeFileSync('/tmp/ssl_cert.pem', cert);
-    fs.writeFileSync('/tmp/ssl_key.key', key);
+    if (updatesToMake && updatesToMake.length > 0) {
+      // ADP requires certificate signing with each API call
+      fs.writeFileSync('/tmp/ssl_cert.pem', cert);
+      fs.writeFileSync('/tmp/ssl_key.key', key);
 
-    const httpsAgent = new https.Agent({
-      cert: fs.readFileSync('/tmp/ssl_cert.pem'),
-      key: fs.readFileSync('/tmp/ssl_key.key')
-    });
+      const httpsAgent = new https.Agent({
+        cert: fs.readFileSync('/tmp/ssl_cert.pem'),
+        key: fs.readFileSync('/tmp/ssl_key.key')
+      });
 
-    const options = {
-      method: 'POST',
-      url: 'https://api.adp.com' + path,
-      headers: { Authorization: `Bearer ${accessToken}` },
-      data: data,
-      httpsAgent: httpsAgent
-    };
+      let promises = [];
+      updatesToMake.forEach((update) => {
+        const options = {
+          method: 'POST',
+          url: 'https://api.adp.com' + update.path,
+          headers: { Authorization: `Bearer ${accessToken}` },
+          data: update.data,
+          httpsAgent: httpsAgent
+        };
+        promises.push(axios(options));
+      });
 
-    try {
-      const result = await axios(options);
-      // return the data from updating an employee
-      console.info('Returning all ADP employee data');
-      return { statusCode: 200, body: result.data };
-    } catch (err) {
-      console.info('Error retrieving ADP employees: ' + JSON.stringify(err.response));
-      return { statusCode: err.response.status, body: JSON.stringify(err.response.data) };
+      try {
+        const [result] = await Promise.all(promises);
+        // return the data from updating an employee
+        console.info('Returning ADP employee update response');
+        return { statusCode: 200, body: result.data };
+      } catch (err) {
+        console.info('Error retrieving ADP employees: ' + JSON.stringify(err.response.data));
+        let errMessage = err.response.data.confirmMessage.resourceMessages[0].processMessages[0].userMessage.messageTxt;
+        throw new Error(errMessage);
+      }
     }
+  } catch (err) {
+    throw new Error(err);
   }
 } // start
 

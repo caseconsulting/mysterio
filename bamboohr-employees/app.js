@@ -18,25 +18,29 @@ async function getSecret(secretName) {
  * Begin execution of BambooHR Employees Lambda Function
  */
 async function start(event) {
-  // get access token from parameter store
-  console.info('Getting API key for Case Consulting BambooHR account');
-  let key = await getSecret('/BambooHR/APIKey');
-  let fields = event.fields;
+  try {
+    // get access token from parameter store
+    console.info('Getting API key for Case Consulting BambooHR account');
+    let key = await getSecret('/BambooHR/APIKey');
+    let fields = event.fields;
 
-  const options = {
-    method: 'POST',
-    url: 'https://api.bamboohr.com/api/gateway.php/consultwithcase/v1/reports/custom',
-    params: { format: 'JSON', onlyCurrent: 'false' },
-    auth: {
-      username: key,
-      password: ''
-    },
-    data: { fields }
-  };
-  const employeeData = await axios(options);
-  // return the BambooHR Employees
-  console.info('Returning BambooHR employees');
-  return { statusCode: 200, body: employeeData.data.employees };
+    const options = {
+      method: 'POST',
+      url: 'https://api.bamboohr.com/api/gateway.php/consultwithcase/v1/reports/custom',
+      params: { format: 'JSON', onlyCurrent: 'false' },
+      auth: {
+        username: key,
+        password: ''
+      },
+      data: { fields }
+    };
+    const employeeData = await axios(options);
+    // return the BambooHR Employees
+    console.info('Returning BambooHR employees');
+    return { statusCode: 200, body: employeeData.data.employees };
+  } catch (err) {
+    throw new Error(err);
+  }
 }
 
 /**

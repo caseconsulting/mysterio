@@ -49,39 +49,39 @@ async function getADPAccessToken() {
  * Begin execution of BambooHR Employees Lambda Function
  */
 async function start() {
-  console.info('Getting ADP access token and SSL certificate for CASE API Central account');
-  // get ADP credentials from aws parameter store
-  // note: access token lasts 60 minutes
-  let [accessToken, cert, key] = await Promise.all([
-    getADPAccessToken(),
-    getSecret('/ADP/SSLCert'),
-    getSecret('/ADP/SSLKey')
-  ]);
-
-  // ADP requires certificate signing with each API call
-  fs.writeFileSync('/tmp/ssl_cert.pem', cert);
-  fs.writeFileSync('/tmp/ssl_key.key', key);
-
-  const httpsAgent = new https.Agent({
-    cert: fs.readFileSync('/tmp/ssl_cert.pem'),
-    key: fs.readFileSync('/tmp/ssl_key.key')
-  });
-
-  const options = {
-    method: 'GET',
-    url: 'https://api.adp.com/hr/v2/workers?$top=5000',
-    headers: { Authorization: `Bearer ${accessToken}` },
-    httpsAgent: httpsAgent
-  };
-
   try {
+    console.info('Getting ADP access token and SSL certificate for CASE API Central account');
+    // get ADP credentials from aws parameter store
+    // note: access token lasts 60 minutes
+    let [accessToken, cert, key] = await Promise.all([
+      getADPAccessToken(),
+      getSecret('/ADP/SSLCert'),
+      getSecret('/ADP/SSLKey')
+    ]);
+
+    // ADP requires certificate signing with each API call
+    fs.writeFileSync('/tmp/ssl_cert.pem', cert);
+    fs.writeFileSync('/tmp/ssl_key.key', key);
+
+    const httpsAgent = new https.Agent({
+      cert: fs.readFileSync('/tmp/ssl_cert.pem'),
+      key: fs.readFileSync('/tmp/ssl_key.key')
+    });
+
+    const options = {
+      method: 'GET',
+      url: 'https://api.adp.com/hr/v2/workers?$top=5000',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      httpsAgent: httpsAgent
+    };
+
     const result = await axios(options);
     // return the ADP employees
     console.info('Returning all ADP employee data');
     return { statusCode: 200, body: result.data.workers };
   } catch (err) {
     console.info('Error retrieving ADP employees: ' + err);
-    return { statusCode: 400, body: err.stack };
+    throw new Error(err);
   }
 } // start
 
