@@ -1,4 +1,8 @@
 {
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
   "dependencies": {
     "@aws-sdk/client-ssm": "3.423.0",
     "@aws-sdk/client-lambda": "3.423.0",
