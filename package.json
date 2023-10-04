@@ -35,8 +35,5 @@
     "tail:prod:monthly-hours": "sam logs -n MonthlyHoursFunction --stack-name mysterio-prod --tail --profile prod",
     "test": "jasmine",
     "validate": "npm ls"
-  },
-  "devDependencies": {
-    "jasmine": "3.99.0"
   }
 }
