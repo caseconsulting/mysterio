@@ -4,9 +4,9 @@
     "npm": ">=9.0.0"
   },
   "dependencies": {
-    "@aws-sdk/client-ssm": "3.433.0",
-    "@aws-sdk/client-lambda": "3.433.0",
-    "axios": "1.5.1",
+    "@aws-sdk/client-ssm": "3.441.0",
+    "@aws-sdk/client-lambda": "3.441.0",
+    "axios": "1.6.0",
     "dayjs": "1.11.10",
     "lodash": "4.17.21",
     "qs": "6.11.2",
