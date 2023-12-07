@@ -23,7 +23,7 @@
     "package:test": "sam package --region us-east-1 --s3-bucket case-consulting-sam-deployments-dev --s3-prefix mysterio-test --output-template-file packaged.yaml",
     "package:prod": "sam package --region us-east-1 --s3-bucket case-consulting-sam-deployments-prod --s3-prefix mysterio-prod --output-template-file packaged.yaml --profile prod",
     "reinstall": "npm ci && npm run reinstall:layers",
-    "reinstall:layers": "(cd layers/dependencies/nodejs && npm ci) && (cd layers/shared/nodejs && npm ci)",
+    "reinstall:layers": "(cd layers/dependencies/nodejs && npm install && npm ci) && (cd layers/shared/nodejs && npm install && npm ci)",
     "tail:dev:basecamp-token": "sam logs -n BasecampTokenFunction --stack-name mysterio-dev --tail",
     "tail:dev:jobcodes": "sam logs -n JobcodesFunction --stack-name mysterio-dev --tail",
     "tail:dev:pto-balances": "sam logs -n PTOBalancesFunction --stack-name mysterio-dev --tail",
