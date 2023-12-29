@@ -70,7 +70,6 @@ Resources:
               Effect: Allow
               Resource:
                 - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
-                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/FireTeam/accessToken
         - Statement:
             - Action:
                 - logs:CreateLogGroup

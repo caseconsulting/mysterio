@@ -222,13 +222,8 @@ async function start(event) {
   // employee numbers to filter tsheets api query on
   let employeeNumber = event.employeeNumber; // 10044   OR   45
   // get access token from parameter store
-  if (parseInt(employeeNumber) < 100) {
-    accessToken = await getSecret('/TSheets/FireTeam/accessToken');
-    console.info('Getting FireTeam access code with ' + employeeNumber + ' employee number');
-  } else {
-    accessToken = await getSecret('/TSheets/accessToken');
-    console.info('Getting CASE access code with ' + employeeNumber + ' employee number');
-  }
+  accessToken = await getSecret('/TSheets/accessToken');
+  console.info('Getting CASE access code with ' + employeeNumber + ' employee number');
 
   let page = 1;
   let allTSheetData = {};

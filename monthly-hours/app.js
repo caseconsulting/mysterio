@@ -33,76 +33,31 @@ function secondsToHours(value) {
 async function start(event) {
   let accessToken = '';
   // variables to filter tsheets api query on
-  let employeeNumber = event.employeeNumber; // 10044   OR   54
-  let isFireTeam = parseInt(employeeNumber) < 100;
-  let isFirstPeriod;
+  let employeeNumber = event.employeeNumber; // 10044
   // get access token from parameter store
-  if (isFireTeam) {
-    isFirstPeriod = dateUtils.getDay(dateUtils.getTodaysDate()) < 16;
-    accessToken = await getSecret('/TSheets/FireTeam/accessToken');
-    console.info('Getting FireTeam access code with ' + employeeNumber + ' employee number');
-  } else {
-    accessToken = await getSecret('/TSheets/accessToken');
-    console.info('Getting CASE access code with ' + employeeNumber + ' employee number');
-  }
+
+  accessToken = await getSecret('/TSheets/accessToken');
+  console.info('Getting CASE access code with ' + employeeNumber + ' employee number');
 
   //let firstDay;
   let lastDay, firstDayPreviousPeriod, lastDayPreviousPeriod;
 
-  if (isFireTeam) {
-    if (isFirstPeriod) {
-      // get first day of the month
-      // firstDay = dateUtils.format(dateUtils.setDay(dateUtils.getTodaysDate(ISOFORMAT), 1), null, ISOFORMAT);
-      // get 15th of the month
-      lastDay = dateUtils.format(dateUtils.setDay(dateUtils.getTodaysDate(ISOFORMAT), 15), null, ISOFORMAT);
-      // get the 16th day of the previous  month
-      firstDayPreviousPeriod = dateUtils.format(
-        dateUtils.setDay(dateUtils.subtract(dateUtils.getTodaysDate(ISOFORMAT), 1, 'month'), 16),
-        null,
-        ISOFORMAT
-      );
-      // get last day of the previous month
-      lastDayPreviousPeriod = dateUtils.format(
-        dateUtils.endOf(dateUtils.subtract(dateUtils.getTodaysDate(ISOFORMAT), 1, 'month'), 'month'),
-        null,
-        ISOFORMAT
-      );
-    } else {
-      // get 16th of the month
-      // firstDay = dateUtils.format(dateUtils.setDay(dateUtils.getTodaysDate(ISOFORMAT), 16), null, ISOFORMAT);
-      // get last day of the month
-      lastDay = dateUtils.format(dateUtils.endOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
-      // get the first day of the month
-      firstDayPreviousPeriod = dateUtils.format(
-        dateUtils.setDay(dateUtils.getTodaysDate(ISOFORMAT), 1),
-        null,
-        ISOFORMAT
-      );
-      // get the 15th of the month
-      lastDayPreviousPeriod = dateUtils.format(
-        dateUtils.setDay(dateUtils.getTodaysDate(ISOFORMAT), 15),
-        null,
-        ISOFORMAT
-      );
-    }
-  } else {
-    // get the first day of the month
-    // firstDay = dateUtils.format(dateUtils.startOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
-    // get last day of the month
-    lastDay = dateUtils.format(dateUtils.endOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
-    // get first day of the previous month
-    firstDayPreviousPeriod = dateUtils.format(
-      dateUtils.startOf(dateUtils.subtract(dateUtils.getTodaysDate(ISOFORMAT), 1, 'month'), 'month'),
-      null,
-      ISOFORMAT
-    );
-    // get last day of the previous month
-    lastDayPreviousPeriod = dateUtils.format(
-      dateUtils.endOf(dateUtils.subtract(dateUtils.getTodaysDate(ISOFORMAT), 1, 'month'), 'month'),
-      null,
-      ISOFORMAT
-    );
-  }
+  // get the first day of the month
+  // firstDay = dateUtils.format(dateUtils.startOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
+  // get last day of the month
+  lastDay = dateUtils.format(dateUtils.endOf(dateUtils.getTodaysDate(ISOFORMAT), 'month'), null, ISOFORMAT);
+  // get first day of the previous month
+  firstDayPreviousPeriod = dateUtils.format(
+    dateUtils.startOf(dateUtils.subtract(dateUtils.getTodaysDate(ISOFORMAT), 1, 'month'), 'month'),
+    null,
+    ISOFORMAT
+  );
+  // get last day of the previous month
+  lastDayPreviousPeriod = dateUtils.format(
+    dateUtils.endOf(dateUtils.subtract(dateUtils.getTodaysDate(ISOFORMAT), 1, 'month'), 'month'),
+    null,
+    ISOFORMAT
+  );
 
   // get todays date
   let todayStart = dateUtils.startOf(dateUtils.getTodaysDate(ISOFORMAT), 'day');
