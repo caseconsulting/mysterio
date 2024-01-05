@@ -1,0 +1,8 @@
+{
+  "name": "generate-gift-card",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Generates an Amazon Incentives gift card",
+  "author": "Case Consulting",
+  "main": "app.js"
+}

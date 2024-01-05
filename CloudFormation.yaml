@@ -120,6 +120,41 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${BambooHREmployeesFunction}
       RetentionInDays: 30
+  GenerateGiftCardFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: !Join
+        - ''
+        - - mysterio-generate-gift-card-
+          - !Ref Stage
+      CodeUri: generate-gift-card/
+      Description: Generates an Amazon Incentives gift card
+      Handler: app.handler
+      Layers:
+        - !Ref DependenciesLayer
+        - !Ref SharedLayer
+      Runtime: nodejs18.x
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/Amazon/Incentives/*
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
+  GenerateGiftCardFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - GenerateGiftCardFunction
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${GenerateGiftCardFunction}
+      RetentionInDays: 30
   UpdateBambooHREmployeeFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
