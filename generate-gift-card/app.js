@@ -49,6 +49,13 @@ const REQUEST_URI = '/' + SERVICE_OPERATION;
 const SERVICE_TARGET = 'com.amazonaws.agcod.AGCODService' + '.' + SERVICE_OPERATION;
 const HOST_NAME = PROTOCOL + '://' + HOST + REQUEST_URI;
 
+/**
+ * Builds the string representation of the HTTP request.
+ *
+ * @param {String} payload - The payload stringified
+ * @param {String} dateTimeString - The date in simple ISO8601 format
+ * @returns String - The canonical request
+ */
 function buildCanonicalRequest(payload, dateTimeString) {
   return [
     REQUEST_TYPE,
@@ -62,49 +69,18 @@ function buildCanonicalRequest(payload, dateTimeString) {
     `${ACCEPT_HEADER};${HOST_HEADER};${XAMZDATE_HEADER};${XAMZTARGET_HEADER}`,
     crypto.createHash('sha256').update(payload).digest('hex')
   ].join('\n');
-}
+} // buildCanonicalRequest
 
-function buildSigningKey(dateString, secretKey) {
-  let dateKey = hmac_binary(KEY_QUALIFIER + secretKey, dateString);
-  let dateRegionKey = hmac_binary(dateKey, REGION_NAME);
-  let dateRegionServiceKey = hmac_binary(dateRegionKey, SERVICE_NAME);
-  return hmac_binary(dateRegionServiceKey, 'aws4_request');
-}
-
-function buildStringToSign(canonicalRequestHash, dateTimeString, dateString) {
-  return [
-    AWS_SHA256_ALGORITHM,
-    dateTimeString,
-    `${dateString}/${REGION_NAME}/${SERVICE_NAME}/${TERMINATION_STRING}`,
-    canonicalRequestHash
-  ].join('\n');
-}
-
-function getPayload(partnerId) {
-  return JSON.stringify({
-    creationRequestId: partnerId + '::' + crypto.randomUUID().replaceAll('-', ''),
-    partnerId: partnerId,
-    value: { currencyCode: CURRENCY_CODE, amount: AMOUNT }
-  });
-} // getPayload
-
-/*
- * Access system manager parameter store and return secret value of the given name.
+/**
+ * Builds the signed authorization for the http request.
+ *
+ * @param {String} payload - The stringified payload
+ * @param {String} dateTimeString - The date in simple ISO8601 format
+ * @param {String} accessKey - The incentives access key
+ * @param {String} secretKey - The incentives secret key
+ * @returns String - The signed authorization request
  */
-async function getSecret(secretName) {
-  const params = {
-    Name: secretName,
-    WithDecryption: true
-  };
-  const result = await ssmClient.send(new GetParameterCommand(params));
-  return result.Parameter.Value;
-} // getSecret
-
-function hmac_binary(key, data) {
-  return crypto.createHmac('sha256', key).update(data).digest();
-}
-
-function signedAPIRequest(payload, dateTimeString, accessKey, secretKey) {
+function buildSignedAuthorizationRequest(payload, dateTimeString, accessKey, secretKey) {
   let dateString = dateTimeString.substring(0, 8);
   let canonicalRequest = buildCanonicalRequest(payload, dateTimeString);
   let canonicalRequestHash = crypto.createHash('sha256').update(canonicalRequest).digest('hex');
@@ -125,7 +101,79 @@ function signedAPIRequest(payload, dateTimeString, accessKey, secretKey) {
     `${XAMZTARGET_HEADER},`,
     ` Signature=${signature}`
   ].join('');
-}
+} // buildSignedAuthorizationRequest
+
+/**
+ * Builds a signing key that is scoped to the region and service as
+ * authentication information for the http request.
+ *
+ * @param {String} dateString - The date in YYYYMMDD format
+ * @param {String} secretKey - The incentives secret key
+ * @returns Buffer - The signing key
+ */
+function buildSigningKey(dateString, secretKey) {
+  let dateKey = hmac_binary(KEY_QUALIFIER + secretKey, dateString);
+  let dateRegionKey = hmac_binary(dateKey, REGION_NAME);
+  let dateRegionServiceKey = hmac_binary(dateRegionKey, SERVICE_NAME);
+  return hmac_binary(dateRegionServiceKey, 'aws4_request');
+} // buildSigningKey
+
+/**
+ * Builds a string comprised of data that will be signed.
+ *
+ * @param {String} canonicalRequestHash - The hash of the canonical request in hex format
+ * @param {String} dateTimeString - The date in simple ISO8601 format
+ * @param {String} dateString - The date in YYYYMMDD format
+ * @returns String - The string to sign
+ */
+function buildStringToSign(canonicalRequestHash, dateTimeString, dateString) {
+  return [
+    AWS_SHA256_ALGORITHM,
+    dateTimeString,
+    `${dateString}/${REGION_NAME}/${SERVICE_NAME}/${TERMINATION_STRING}`,
+    canonicalRequestHash
+  ].join('\n');
+} // buildStringToSign
+
+/**
+ * Gets payload parameters used for creating a giftcard.
+ *
+ * @param partnerId - The Incentives Partner ID
+ * @returns String - The payload stringified
+ */
+function getPayload(partnerId) {
+  return JSON.stringify({
+    creationRequestId: partnerId + '::' + crypto.randomUUID().replaceAll('-', ''),
+    partnerId: partnerId,
+    value: { currencyCode: CURRENCY_CODE, amount: AMOUNT }
+  });
+} // getPayload
+
+/**
+ * Access system manager parameter store and return secret value of the given name.
+ *
+ * @param secretName - The parameter store secret name
+ * @returns String - The value of the secret
+ */
+async function getSecret(secretName) {
+  const params = {
+    Name: secretName,
+    WithDecryption: true
+  };
+  const result = await ssmClient.send(new GetParameterCommand(params));
+  return result.Parameter.Value;
+} // getSecret
+
+/**
+ * Creates a cryptographic HMAC digest.
+ *
+ * @param {String} key - The key used to create the cryptographic HMAC hash
+ * @param {String} data - The data to hash
+ * @returns Buffer - The HMAC digest
+ */
+function hmac_binary(key, data) {
+  return crypto.createHmac('sha256', key).update(data).digest();
+} // hmac_binary
 
 /**
  * Entry point from the handler to process the creation of an Amazon gift card.
@@ -144,7 +192,7 @@ async function start() {
     console.info('Successfully retrieved system parameter secrets');
     let payload = getPayload(PARTNER_ID);
     console.info('Successfully set payload');
-    let auth = signedAPIRequest(payload, DATE_TIME_STRING, ACCESS_KEY, SECREY_KEY);
+    let auth = buildSignedAuthorizationRequest(payload, DATE_TIME_STRING, ACCESS_KEY, SECREY_KEY);
     console.info('Successfully set auth');
     const options = {
       method: METHOD,
