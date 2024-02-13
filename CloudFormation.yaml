@@ -228,6 +228,42 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${MonthlyHoursFunction}
       RetentionInDays: 30
+  GetQuickBooksDataFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: !Join
+        - ''
+        - - mysterio-get-quickbooks-data-
+          - !Ref Stage
+      CodeUri: get-quickbooks-data/
+      Description: Retrieves timesheet data from Quickbooks API for given user between a date range
+      Handler: app.handler
+      Layers:
+        - !Ref DependenciesLayer
+        - !Ref SharedLayer
+      Runtime: nodejs18.x
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
+  GetQuickBooksDataFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - GetQuickBooksDataFunction
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${GetQuickBooksDataFunction}
+      RetentionInDays: 30
   JobcodesFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:

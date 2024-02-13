@@ -1,0 +1,8 @@
+{
+  "name": "jobcodes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Retrieves jobcodes from TSheets API",
+  "author": "Case Consulting",
+  "main": "app.js"
+}
