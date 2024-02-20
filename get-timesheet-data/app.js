@@ -19,13 +19,13 @@ async function getSecret(secretName) {
 /*
  * Begin execution of Jobcodes Lambda Function
  */
-async function start() {
+async function start(event) {
   try {
     // get access token from parameter store
     accessToken = await getSecret('/TSheets/accessToken');
-    let employeeNumber = 10066;
-    let startDate = '2024-01-01';
-    let endDate = '2024-02-29';
+    let employeeNumber = event.employeeNumber;
+    let startDate = event.startDate;
+    let endDate = event.endDate;
     // get QuickBooks user
     let userData = await getUser(employeeNumber);
     let [userId, user] = Object.entries(userData)[0];
@@ -44,16 +44,19 @@ async function start() {
       body: { timesheets: monthlyTimesheets, ptoBalances: ptoBalances }
     });
   } catch (err) {
-    return Promise.reject({
-      statusCode: 500,
-      body: err
-    });
+    return err;
   }
 }
 
 function getMonthlyTimesheets(timesheetsData, jobcodesData) {
   // group by month
   let monthlyTimesheets = _.groupBy(timesheetsData, ({ date }) => dateUtils.getMonth(date));
+  // set each month of the year to empty object
+  for (let i = 0; i < 12; i++) {
+    if (!monthlyTimesheets[i]) {
+      monthlyTimesheets[i] = {};
+    }
+  }
   // group timesheet entries by jobcode names and duration for each month
   _.forEach(monthlyTimesheets, (timesheetsArr, month) => {
     // group timesheet entries by jobcode names
@@ -95,6 +98,7 @@ async function getUser(employeeId) {
     // request data from TSheet API
     let userRequest = await axios(options);
     let userObject = userRequest.data.results.users;
+    if (userObject?.length === 0) throw { status: 400, message: 'Invalid employee number' };
     let supplementalObject = userRequest.data.supplemental_data;
     let user = _.merge(userObject, supplementalObject);
     return Promise.resolve(user);
@@ -169,7 +173,7 @@ function getTimesheetDateBatches(startDate, endDate) {
   let batches = [];
   let startBatchDate = dateUtils.startOf(startDate, 'day');
   let endBatchDate = dateUtils.endOf(dateUtils.add(startDate, 1, 'month', dateUtils.DEFAULT_ISOFORMAT), 'month');
-  let today = '2024-02-15'; // dateUtils.getTodaysDate(dateUtils.DEFAULT_ISOFORMAT);
+  let today = dateUtils.getTodaysDate(dateUtils.DEFAULT_ISOFORMAT);
   while (dateUtils.isBefore(startBatchDate, endDate, 'month')) {
     batches.push({ startDate: startBatchDate, endDate: endBatchDate });
     startBatchDate = dateUtils.startOf(dateUtils.add(endBatchDate, 1, 'month', dateUtils.DEFAULT_ISOFORMAT), 'month');
@@ -196,8 +200,8 @@ function getTimesheetDateBatches(startDate, endDate) {
  * @returns {Object} object - API Gateway Lambda Proxy Output Format
  *
  */
-async function handler() {
-  return start();
+async function handler(event) {
+  return start(event);
 }
 
 module.exports = { handler };
