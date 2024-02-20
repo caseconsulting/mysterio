@@ -36,7 +36,7 @@ async function start(event) {
     // merge regular jobcodes with pto jobcodes
     jobcodesData = _.merge(jobcodesData, ptoJobcodes);
     // group timesheet entries by month and each month by jobcodes with the sum of their duration
-    let monthlyTimesheets = getMonthlyTimesheets(timesheetsData, jobcodesData);
+    let monthlyTimesheets = getMonthlyTimesheets(timesheetsData, jobcodesData, startDate, endDate);
     // set pto balances
     let ptoBalances = _.mapKeys(user.pto_balances, (value, key) => getJobcodeName(key, jobcodesData));
     return Promise.resolve({
@@ -48,13 +48,14 @@ async function start(event) {
   }
 }
 
-function getMonthlyTimesheets(timesheetsData, jobcodesData) {
+function getMonthlyTimesheets(timesheetsData, jobcodesData, startDate, endDate) {
   // group by month
-  let monthlyTimesheets = _.groupBy(timesheetsData, ({ date }) => dateUtils.getMonth(date));
+  let monthlyTimesheets = _.groupBy(timesheetsData, ({ date }) => dateUtils.format(date, null, 'YYYY-MM'));
   // set each month of the year to empty object
-  for (let i = 0; i < 12; i++) {
-    if (!monthlyTimesheets[i]) {
-      monthlyTimesheets[i] = {};
+  for (let i = startDate; dateUtils.isSameOrBefore(i, endDate, 'month'); i = dateUtils.add(i, 1, 'month', 'YYYY-MM')) {
+    let index = dateUtils.format(i, null, 'YYYY-MM');
+    if (!monthlyTimesheets[index]) {
+      monthlyTimesheets[index] = {};
     }
   }
   // group timesheet entries by jobcode names and duration for each month
