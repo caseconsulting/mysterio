@@ -32,7 +32,9 @@ async function start(event) {
     // get Quickbooks user jobcodes and timesheets data
     let [jobcodesData, timesheetsData] = await Promise.all([getJobcodes(), getTimesheets(startDate, endDate, userId)]);
     // convert a user's PTO jobcodes into an array of jobcode Objects
-    let ptoJobcodes = _.map(userData.jobcodes, (value, key) => value);
+    let ptoJobcodes = _.map(userData.jobcodes, (value, key) => {
+      return { id: value.id, type: value.type, name: value.name };
+    });
     // merge regular jobcodes with pto jobcodes
     jobcodesData = _.merge(jobcodesData, ptoJobcodes);
     // group timesheet entries by month and each month by jobcodes with the sum of their duration
@@ -109,20 +111,35 @@ async function getUser(employeeId) {
 }
 
 async function getJobcodes() {
+  let hasMoreJobcodes = true;
+  let page = 1;
+  let jobcodesArr = [];
   try {
-    // set options for TSheet API call
-    let options = {
-      method: 'GET',
-      url: 'https://rest.tsheets.com/api/v1/jobcodes',
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      }
-    };
+    while (hasMoreJobcodes) {
+      // set options for TSheet API call
+      let options = {
+        method: 'GET',
+        url: 'https://rest.tsheets.com/api/v1/jobcodes',
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        }
+      };
 
-    // request data from TSheet API
-    let jobcodeRequest = await axios(options);
-    let jobcodesObj = jobcodeRequest.data.results.jobcodes;
-    let jobcodesArr = _.map(jobcodesObj, (value, key) => value);
+      // request data from TSheet API
+      let [firstRequest, secondRequest] = await Promise.all([
+        axios({ ...options, params: { page: page } }),
+        axios({ ...options, params: { page: page + 1 } })
+      ]);
+      let jobcodesObj = _.merge(firstRequest.data.results.jobcodes, secondRequest.data.results.jobcodes);
+      jobcodesArr = _.merge(
+        jobcodesArr,
+        _.map(jobcodesObj, (value, key) => {
+          return { id: value.id, type: value.type, name: value.name };
+        })
+      );
+      page += 2;
+      hasMoreJobcodes = firstRequest.data.more && secondRequest.data.more;
+    }
     return Promise.resolve(jobcodesArr);
   } catch (err) {
     return Promise.reject(err);
