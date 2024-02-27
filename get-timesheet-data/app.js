@@ -37,17 +37,36 @@ async function start(event) {
     });
     // merge regular jobcodes with pto jobcodes
     jobcodesData = _.merge(jobcodesData, ptoJobcodes);
+    // calculate how many days are entered in the future
+    let supplementalData = getSupplementalData(timesheetsData);
     // group timesheet entries by month and each month by jobcodes with the sum of their duration
     let monthlyTimesheets = getMonthlyTimesheets(timesheetsData, jobcodesData, startDate, endDate);
     // set pto balances
     let ptoBalances = _.mapKeys(user.pto_balances, (value, key) => getJobcodeName(key, jobcodesData));
     return Promise.resolve({
       statusCode: 200,
-      body: { timesheets: monthlyTimesheets, ptoBalances: ptoBalances }
+      body: { timesheets: monthlyTimesheets, ptoBalances: ptoBalances, supplementalData: supplementalData }
     });
   } catch (err) {
     return err;
   }
+}
+
+function getSupplementalData(timesheetsData) {
+  let days = 0;
+  let duration = 0;
+  let today = dateUtils.getTodaysDate(dateUtils.DEFAULT_ISOFORMAT);
+  let futureTimesheets = _.filter(timesheetsData, (timesheet) => dateUtils.isAfter(timesheet.date, today, 'day'));
+  let groupedFutureTimesheets = _.groupBy(futureTimesheets, ({ date }) =>
+    dateUtils.format(date, null, dateUtils.DEFAULT_ISOFORMAT)
+  );
+  _.forEach(groupedFutureTimesheets, (timesheets, date) => {
+    days += 1;
+    _.forEach(timesheets, (timesheet) => {
+      duration += timesheet.duration;
+    });
+  });
+  return { future: { days, duration } };
 }
 
 function getMonthlyTimesheets(timesheetsData, jobcodesData, startDate, endDate) {
@@ -160,6 +179,7 @@ async function getTimesheets(startDate, endDate, userId) {
         params: {
           start_date: dateUtils.format(dateBatch.startDate, null, dateUtils.DEFAULT_ISOFORMAT),
           end_date: dateUtils.format(dateBatch.endDate, null, dateUtils.DEFAULT_ISOFORMAT),
+          jobcode_type: 'pto',
           user_ids: userId
         },
         headers: {
