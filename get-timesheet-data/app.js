@@ -179,7 +179,6 @@ async function getTimesheets(startDate, endDate, userId) {
         params: {
           start_date: dateUtils.format(dateBatch.startDate, null, dateUtils.DEFAULT_ISOFORMAT),
           end_date: dateUtils.format(dateBatch.endDate, null, dateUtils.DEFAULT_ISOFORMAT),
-          jobcode_type: 'pto',
           user_ids: userId
         },
         headers: {
