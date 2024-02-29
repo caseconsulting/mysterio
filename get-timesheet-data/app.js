@@ -24,17 +24,22 @@ async function start(event) {
     // get access token from parameter store
     accessToken = await getSecret('/TSheets/accessToken');
     let employeeNumber = event.employeeNumber;
+    let onlyPto = event.onlyPto;
     let startDate = event.startDate;
     let endDate = event.endDate;
     // get QuickBooks user
     let userData = await getUser(employeeNumber);
     let [userId, user] = Object.entries(userData)[0];
-    // get Quickbooks user jobcodes and timesheets data
-    let [jobcodesData, timesheetsData] = await Promise.all([getJobcodes(), getTimesheets(startDate, endDate, userId)]);
     // convert a user's PTO jobcodes into an array of jobcode Objects
     let ptoJobcodes = _.map(userData.jobcodes, (value, key) => {
       return { id: value.id, type: value.type, name: value.name };
     });
+    if (onlyPto) {
+      let ptoBalances = _.mapKeys(user.pto_balances, (value, key) => getJobcodeName(key, ptoJobcodes));
+      return { statusCode: 200, body: { ptoBalances: ptoBalances } };
+    }
+    // get Quickbooks user jobcodes and timesheets data
+    let [jobcodesData, timesheetsData] = await Promise.all([getJobcodes(), getTimesheets(startDate, endDate, userId)]);
     // merge regular jobcodes with pto jobcodes
     jobcodesData = _.merge(jobcodesData, ptoJobcodes);
     // calculate how many days are entered in the future
