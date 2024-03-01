@@ -1,8 +1,8 @@
 {
-  "name": "jobcodes",
+  "name": "get-timesheet-data",
   "version": "1.0.0",
   "private": true,
-  "description": "Retrieves jobcodes from TSheets API",
+  "description": "Retrieves timesheets data from TSheets API",
   "author": "Case Consulting",
   "main": "app.js"
 }

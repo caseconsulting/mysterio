@@ -191,43 +191,6 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${UpdateBambooHREmployeeFunction}
       RetentionInDays: 30
-  MonthlyHoursFunction:
-    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
-    Properties:
-      FunctionName: !Join
-        - ''
-        - - mysterio-monthly-hours-
-          - !Ref Stage
-      CodeUri: monthly-hours/
-      Description: Retrieves time sheets from TSheets API for given user between a date range
-      Handler: app.handler
-      Layers:
-        - !Ref DependenciesLayer
-        - !Ref SharedLayer
-      Runtime: nodejs18.x
-      Timeout: 30
-      Policies:
-        - Statement:
-            - Action:
-                - ssm:GetParameter*
-              Effect: Allow
-              Resource:
-                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
-                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/FireTeam/accessToken
-        - Statement:
-            - Action:
-                - logs:CreateLogGroup
-                - logs:CreateLogStream
-                - logs:PutLogEvents
-              Effect: Allow
-              Resource: '*'
-  MonthlyHoursFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    DependsOn:
-      - MonthlyHoursFunction
-    Properties:
-      LogGroupName: !Sub /aws/lambda/${MonthlyHoursFunction}
-      RetentionInDays: 30
   GetTimesheetDataFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
@@ -263,41 +226,6 @@ Resources:
       - GetTimesheetDataFunction
     Properties:
       LogGroupName: !Sub /aws/lambda/${GetTimesheetDataFunction}
-      RetentionInDays: 30
-  JobcodesFunction:
-    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
-    Properties:
-      FunctionName: !Join
-        - ''
-        - - mysterio-jobcodes-
-          - !Ref Stage
-      CodeUri: jobcodes/
-      Description: Retrieves jobcodes from TSheets API
-      Handler: app.handler
-      Layers:
-        - !Ref DependenciesLayer
-        - !Ref SharedLayer
-      Runtime: nodejs18.x
-      Timeout: 30
-      Policies:
-        - Statement:
-            - Action:
-                - ssm:GetParameter*
-              Effect: Allow
-              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
-        - Statement:
-            - Action:
-                - logs:CreateLogGroup
-                - logs:CreateLogStream
-                - logs:PutLogEvents
-              Effect: Allow
-              Resource: '*'
-  JobcodesFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    DependsOn:
-      - JobcodesFunction
-    Properties:
-      LogGroupName: !Sub /aws/lambda/${JobcodesFunction}
       RetentionInDays: 30
   BasecampTokenFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
@@ -492,12 +420,6 @@ Outputs:
   MonthlyHoursFunctionIamRole:
     Description: 'Implicit IAM Role created for Time Sheets function'
     Value: !GetAtt MonthlyHoursFunctionRole.Arn
-  JobcodesFunction:
-    Description: 'Jobcodes Lambda Function ARN'
-    Value: !GetAtt JobcodesFunction.Arn
-  JobcodesFunctionIamRole:
-    Description: 'Implicit IAM Role created for Jobcodes function'
-    Value: !GetAtt JobcodesFunctionRole.Arn
   BasecampTokenFunction:
     Description: 'Basecamp Token Lambda Function ARN'
     Value: !GetAtt BasecampTokenFunction.Arn
