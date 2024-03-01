@@ -48,42 +48,6 @@ Globals:
         STAGE: !Ref Stage
 
 Resources:
-  PTOBalancesFunction:
-    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
-    Properties:
-      FunctionName: !Join
-        - ''
-        - - mysterio-pto-balances-
-          - !Ref Stage
-      CodeUri: pto-balances/
-      Description: Retrieves PTO balances from TSheets API for given user
-      Handler: app.handler
-      Layers:
-        - !Ref DependenciesLayer
-        - !Ref SharedLayer
-      Runtime: nodejs18.x
-      Timeout: 30
-      Policies:
-        - Statement:
-            - Action:
-                - ssm:GetParameter*
-              Effect: Allow
-              Resource:
-                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
-        - Statement:
-            - Action:
-                - logs:CreateLogGroup
-                - logs:CreateLogStream
-                - logs:PutLogEvents
-              Effect: Allow
-              Resource: '*'
-  PTOBalancesFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    DependsOn:
-      - PTOBalancesFunction
-    Properties:
-      LogGroupName: !Sub /aws/lambda/${PTOBalancesFunction}
-      RetentionInDays: 30
   BambooHREmployeesFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
@@ -408,18 +372,6 @@ Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
   # Find out more about other implicit resources you can reference within SAM
   # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
-  PTOBalancesFunction:
-    Description: 'PTO Balances Lambda Function ARN'
-    Value: !GetAtt PTOBalancesFunction.Arn
-  PTOBalancesFunctionIamRole:
-    Description: 'Implicit IAM Role created for PTO Balances function'
-    Value: !GetAtt PTOBalancesFunctionRole.Arn
-  MonthlyHoursFunction:
-    Description: 'Time Sheets Lambda Function ARN'
-    Value: !GetAtt MonthlyHoursFunction.Arn
-  MonthlyHoursFunctionIamRole:
-    Description: 'Implicit IAM Role created for Time Sheets function'
-    Value: !GetAtt MonthlyHoursFunctionRole.Arn
   BasecampTokenFunction:
     Description: 'Basecamp Token Lambda Function ARN'
     Value: !GetAtt BasecampTokenFunction.Arn
