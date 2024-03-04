@@ -34,11 +34,11 @@ async function start(event) {
     let [userId, user] = Object.entries(userData)[0];
     // convert a user's PTO jobcodes into an array of jobcode Objects
     let ptoJobcodes = _.map(userData.jobcodes, (value, key) => {
-      return { id: value.id, type: value.type, name: value.name };
+      return { id: value.id, parent_id: value.parent_id, type: value.type, name: value.name };
     });
     if (onlyPto) {
       // return only PTO jobcodes and early exit
-      let ptoBalances = _.mapKeys(user.pto_balances, (value, key) => getJobcodeName(key, ptoJobcodes));
+      let ptoBalances = _.mapKeys(user.pto_balances, (value, key) => getJobcode(key, ptoJobcodes)?.name);
       return { statusCode: 200, body: { ptoBalances: ptoBalances } };
     }
     // get Quickbooks user jobcodes and timesheets data
@@ -46,11 +46,11 @@ async function start(event) {
     // merge regular jobcodes with pto jobcodes
     jobcodesData = _.merge(jobcodesData, ptoJobcodes);
     // calculate how many days are entered in the future
-    let supplementalData = getSupplementalData(timesheetsData);
+    let supplementalData = getSupplementalData(timesheetsData, jobcodesData);
     // group timesheet entries by month and each month by jobcodes with the sum of their duration
     let periodTimesheets = getPeriodTimesheets(timesheetsData, jobcodesData, startDate, endDate);
     // set pto balances
-    let ptoBalances = _.mapKeys(user.pto_balances, (value, key) => getJobcodeName(key, jobcodesData));
+    let ptoBalances = _.mapKeys(user.pto_balances, (value, key) => getJobcode(key, jobcodesData)?.name);
     return Promise.resolve({
       statusCode: 200,
       body: { timesheets: periodTimesheets, ptoBalances: ptoBalances, supplementalData: supplementalData }
@@ -61,12 +61,49 @@ async function start(event) {
 } // start
 
 /**
+ * Returns the user's non-billable jobcodes.
+ *
+ * @param {Array} timesheetsData - The user's timesheets
+ * @param {Array} jobcodesData - All jobcodes
+ * @returns Array - The non-billable jobcodes
+ */
+function getNonBillableCodes(timesheetsData, jobcodesData) {
+  let nonBillableids = [8690454, 40722896, 36091452]; // zAdmin (Overhead), Internship Program, Leave Without Pay
+  let codes = new Set();
+  _.forEach(timesheetsData, (timesheet) => {
+    let jobcode = getJobcode(timesheet.jobcodeId, jobcodesData);
+    if (isNonBillable(jobcode, jobcodesData, nonBillableids)) codes.add(jobcode.name);
+  });
+  return Array.from(codes);
+} // getNonBillableCodes
+
+/**
+ * Recursively checks if a jobcode object is non-billable.
+ *
+ * @param {Object} jobcode - The jobcode object
+ * @param {Array} jobcodesData - All jobcodes
+ * @param {Array} nonBillableIds - The non-billable IDs
+ * @returns Array - The non-billable jobcodes
+ */
+function isNonBillable(jobcode, jobcodesData, nonBillableIds) {
+  if (jobcode.parent_id === 0) {
+    // base case
+    return nonBillableIds.includes(jobcode.id) || jobcode.type === 'pto';
+  } else {
+    // checks if a jobcode is inside a non billable parent id
+    let parentJobcode = getJobcode(jobcode.parent_id, jobcodesData);
+    return nonBillableIds.includes(jobcode.parent_id) || isNonBillable(parentJobcode, jobcodesData, nonBillableIds);
+  }
+} // isNonBillable
+
+/**
  * Gets supplemental data like future timesheet hours and days.
  *
  * @param {Array} timesheetsData - The user timesheets within the given time period
+ * @param {Array} jobcodesData - All jobcodes
  * @returns Object - The supplemental data
  */
-function getSupplementalData(timesheetsData) {
+function getSupplementalData(timesheetsData, jobcodesData) {
   let days = 0;
   let duration = 0;
   let today = dateUtils.getTodaysDate(dateUtils.DEFAULT_ISOFORMAT);
@@ -82,7 +119,8 @@ function getSupplementalData(timesheetsData) {
       duration += timesheet.duration;
     });
   });
-  return { future: { days, duration } };
+  let nonBillables = getNonBillableCodes(timesheetsData, jobcodesData);
+  return { future: { days, duration }, nonBillables };
 } // getSupplementalData
 
 /**
@@ -107,8 +145,9 @@ function getPeriodTimesheets(timesheetsData, jobcodesData, startDate, endDate) {
   // group timesheet entries by jobcode names and duration for each month
   _.forEach(periodTimesheets, (timesheetsArr, month) => {
     // group timesheet entries by jobcode names
-    periodTimesheets[month] = _.groupBy(timesheetsArr, (timesheet) =>
-      getJobcodeName(timesheet.jobcodeId, jobcodesData)
+    periodTimesheets[month] = _.groupBy(
+      timesheetsArr,
+      (timesheet) => getJobcode(timesheet.jobcodeId, jobcodesData)?.name
     );
     _.forEach(periodTimesheets[month], (jobcodeTimesheets, jobcodeName) => {
       // Assign the duration sum of each months jobcode
@@ -125,15 +164,15 @@ function getPeriodTimesheets(timesheetsData, jobcodesData, startDate, endDate) {
 } // getPeriodTimesheets
 
 /**
- * Gets the name of the jobcode ID.
+ * Gets the jobcode object from the jobcode ID.
  *
  * @param {Number} jobcodeId - The jobcode ID
  * @param {Array} jobcodes - The jobcodes
- * @returns String - The jobcode name
+ * @returns Object - The jobcode
  */
-function getJobcodeName(jobcodeId, jobcodes) {
-  return _.find(jobcodes, (jobcodeObj) => Number(jobcodeObj.id) === Number(jobcodeId))?.name;
-} // getJobcodeName
+function getJobcode(jobcodeId, jobcodes) {
+  return _.find(jobcodes, (jobcodeObj) => Number(jobcodeObj.id) === Number(jobcodeId));
+} // getJobcode
 
 /**
  * Gets the user from timesheets API.
@@ -198,7 +237,7 @@ async function getJobcodes() {
       jobcodesArr = _.merge(
         jobcodesArr,
         _.map(jobcodesObj, (value, key) => {
-          return { id: value.id, type: value.type, name: value.name };
+          return { id: value.id, parent_id: value.parent_id, type: value.type, name: value.name };
         })
       );
       page += 2;
