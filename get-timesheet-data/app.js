@@ -34,7 +34,7 @@ async function start(event) {
     let [userId, user] = Object.entries(userData)[0];
     // convert a user's PTO jobcodes into an array of jobcode Objects
     let ptoJobcodes = _.map(userData.jobcodes, (value, key) => {
-      return { id: value.id, parent_id: value.parent_id, type: value.type, name: value.name };
+      return { id: value.id, parentId: value.parent_id, type: value.type, name: value.name };
     });
     if (onlyPto) {
       // return only PTO jobcodes and early exit
@@ -86,13 +86,13 @@ function getNonBillableCodes(timesheetsData, jobcodesData) {
  * @returns Array - The non-billable jobcodes
  */
 function isNonBillable(jobcode, jobcodesData, nonBillableIds) {
-  if (jobcode.parent_id === 0) {
+  if (jobcode.parentId === 0) {
     // base case
     return nonBillableIds.includes(jobcode.id) || jobcode.type === 'pto';
   } else {
     // checks if a jobcode is inside a non billable parent id
-    let parentJobcode = getJobcode(jobcode.parent_id, jobcodesData);
-    return nonBillableIds.includes(jobcode.parent_id) || isNonBillable(parentJobcode, jobcodesData, nonBillableIds);
+    let parentJobcode = getJobcode(jobcode.parentId, jobcodesData);
+    return nonBillableIds.includes(jobcode.parentId) || isNonBillable(parentJobcode, jobcodesData, nonBillableIds);
   }
 } // isNonBillable
 
@@ -237,7 +237,7 @@ async function getJobcodes() {
       jobcodesArr = _.merge(
         jobcodesArr,
         _.map(jobcodesObj, (value, key) => {
-          return { id: value.id, parent_id: value.parent_id, type: value.type, name: value.name };
+          return { id: value.id, parentId: value.parent_id, type: value.type, name: value.name };
         })
       );
       page += 2;
