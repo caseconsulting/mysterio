@@ -42,9 +42,9 @@ async function start(event) {
       return { statusCode: 200, body: { ptoBalances: ptoBalances } };
     }
     // get Quickbooks user jobcodes and timesheets data
-    let [jobcodesData, timesheetsData] = await Promise.all([getJobcodes(), getTimesheets(startDate, endDate, userId)]);
+    let { jobcodes: jobcodesData, timesheets: timesheetsData } = await getTimesheets(startDate, endDate, userId);
     // merge regular jobcodes with pto jobcodes
-    jobcodesData = _.merge(jobcodesData, ptoJobcodes);
+    jobcodesData = [...jobcodesData, ...ptoJobcodes];
     // calculate how many days are entered in the future
     let supplementalData = getSupplementalData(timesheetsData, jobcodesData);
     // group timesheet entries by month and each month by jobcodes with the sum of their duration
@@ -56,6 +56,7 @@ async function start(event) {
       body: { timesheets: periodTimesheets, ptoBalances: ptoBalances, supplementalData: supplementalData }
     });
   } catch (err) {
+    console.log(err);
     return err;
   }
 } // start
@@ -208,48 +209,6 @@ async function getUser(employeeId) {
 } // getUser
 
 /**
- * Gets all jobcodes that CASE has.
- *
- * @returns Array - All jobcodes
- */
-async function getJobcodes() {
-  let hasMoreJobcodes = true;
-  let page = 1;
-  let jobcodesArr = [];
-  try {
-    // keep looping until QuickBooks returns all pages worth of jobcodes
-    while (hasMoreJobcodes) {
-      // set options for TSheet API call
-      let options = {
-        method: 'GET',
-        url: 'https://rest.tsheets.com/api/v1/jobcodes',
-        headers: {
-          Authorization: `Bearer ${accessToken}`
-        }
-      };
-
-      // request data from TSheet API 2 pages at a time
-      let [firstRequest, secondRequest] = await Promise.all([
-        axios({ ...options, params: { page: page } }),
-        axios({ ...options, params: { page: page + 1 } })
-      ]);
-      let jobcodesObj = _.merge(firstRequest.data.results.jobcodes, secondRequest.data.results.jobcodes);
-      jobcodesArr = _.merge(
-        jobcodesArr,
-        _.map(jobcodesObj, (value, key) => {
-          return { id: value.id, parentId: value.parent_id, type: value.type, name: value.name };
-        })
-      );
-      page += 2;
-      hasMoreJobcodes = firstRequest.data.more && secondRequest.data.more;
-    }
-    return Promise.resolve(jobcodesArr);
-  } catch (err) {
-    return Promise.reject(err);
-  }
-} // getJobcodes
-
-/**
  * Gets the user's timesheets within a given time period.
  *
  * @param {String} startDate - The period start date
@@ -261,6 +220,7 @@ async function getTimesheets(startDate, endDate, userId) {
   try {
     let promises = [];
     let timesheets = [];
+    let jobcodes = [];
     // get date batches that span 2 months (start of month to the end of the next month) to run in parallel
     let dateBatches = getTimesheetDateBatches(startDate, endDate);
     _.forEach(dateBatches, (dateBatch) => {
@@ -292,8 +252,13 @@ async function getTimesheets(startDate, endDate, userId) {
           date: ts.date
         });
       });
+      let jobcodesObj = timesheetResponse.data?.supplemental_data?.jobcodes;
+      let arr = _.map(jobcodesObj, (value, key) => {
+        return { id: value.id, parentId: value.parent_id, type: value.type, name: value.name };
+      });
+      jobcodes = [...jobcodes, ...arr];
     });
-    return Promise.resolve(timesheets);
+    return Promise.resolve({ timesheets, jobcodes });
   } catch (err) {
     return Promise.reject(err);
   }
@@ -330,6 +295,49 @@ function getTimesheetDateBatches(startDate, endDate) {
   }
   return batches;
 } // getTimesheetDateBatches
+
+// COMMENTING THIS FUNCTION OUT IN CASE WE NEED TO GET ALL JOBCODES IN THE FUTURE
+// /**
+// * Gets all jobcodes that CASE has.
+// *
+// * @returns Array - All jobcodes
+// */
+// async function getJobcodes() {
+//   let hasMoreJobcodes = true;
+//   let page = 1;
+//   let jobcodesArr = [];
+//   try {
+//     // keep looping until QuickBooks returns all pages worth of jobcodes
+//     while (hasMoreJobcodes) {
+//       // set options for TSheet API call
+//       let options = {
+//         method: 'GET',
+//         url: 'https://rest.tsheets.com/api/v1/jobcodes',
+//         headers: {
+//           Authorization: `Bearer ${accessToken}`
+//         }
+//       };
+
+//       // request data from TSheet API 2 pages at a time
+//       let [firstRequest, secondRequest] = await Promise.all([
+//         axios({ ...options, params: { page: page } }),
+//         axios({ ...options, params: { page: page + 1 } })
+//       ]);
+//       let jobcodesObj = _.merge(firstRequest.data.results.jobcodes, secondRequest.data.results.jobcodes);
+//       jobcodesArr = _.merge(
+//         jobcodesArr,
+//         _.map(jobcodesObj, (value, key) => {
+//           return { id: value.id, parentId: value.parent_id, type: value.type, name: value.name };
+//         })
+//       );
+//       page += 2;
+//       hasMoreJobcodes = firstRequest.data.more && secondRequest.data.more;
+//     }
+//     return Promise.resolve(jobcodesArr);
+//   } catch (err) {
+//     return Promise.reject(err);
+//   }
+// } // getJobcodes
 
 /**
  *
