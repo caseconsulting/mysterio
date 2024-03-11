@@ -48,42 +48,6 @@ Globals:
         STAGE: !Ref Stage
 
 Resources:
-  PTOBalancesFunction:
-    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
-    Properties:
-      FunctionName: !Join
-        - ''
-        - - mysterio-pto-balances-
-          - !Ref Stage
-      CodeUri: pto-balances/
-      Description: Retrieves PTO balances from TSheets API for given user
-      Handler: app.handler
-      Layers:
-        - !Ref DependenciesLayer
-        - !Ref SharedLayer
-      Runtime: nodejs18.x
-      Timeout: 30
-      Policies:
-        - Statement:
-            - Action:
-                - ssm:GetParameter*
-              Effect: Allow
-              Resource:
-                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
-        - Statement:
-            - Action:
-                - logs:CreateLogGroup
-                - logs:CreateLogStream
-                - logs:PutLogEvents
-              Effect: Allow
-              Resource: '*'
-  PTOBalancesFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    DependsOn:
-      - PTOBalancesFunction
-    Properties:
-      LogGroupName: !Sub /aws/lambda/${PTOBalancesFunction}
-      RetentionInDays: 30
   BambooHREmployeesFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
@@ -191,15 +155,15 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${UpdateBambooHREmployeeFunction}
       RetentionInDays: 30
-  MonthlyHoursFunction:
+  GetTimesheetDataFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
       FunctionName: !Join
         - ''
-        - - mysterio-monthly-hours-
+        - - mysterio-get-timesheet-data-
           - !Ref Stage
-      CodeUri: monthly-hours/
-      Description: Retrieves time sheets from TSheets API for given user between a date range
+      CodeUri: get-timesheet-data/
+      Description: Retrieves timesheet data from Quickbooks API for given user between a date range
       Handler: app.handler
       Layers:
         - !Ref DependenciesLayer
@@ -213,7 +177,6 @@ Resources:
               Effect: Allow
               Resource:
                 - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
-                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/FireTeam/accessToken
         - Statement:
             - Action:
                 - logs:CreateLogGroup
@@ -221,47 +184,12 @@ Resources:
                 - logs:PutLogEvents
               Effect: Allow
               Resource: '*'
-  MonthlyHoursFunctionLogGroup:
+  GetTimesheetDataFunctionLogGroup:
     Type: AWS::Logs::LogGroup
     DependsOn:
-      - MonthlyHoursFunction
+      - GetTimesheetDataFunction
     Properties:
-      LogGroupName: !Sub /aws/lambda/${MonthlyHoursFunction}
-      RetentionInDays: 30
-  JobcodesFunction:
-    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
-    Properties:
-      FunctionName: !Join
-        - ''
-        - - mysterio-jobcodes-
-          - !Ref Stage
-      CodeUri: jobcodes/
-      Description: Retrieves jobcodes from TSheets API
-      Handler: app.handler
-      Layers:
-        - !Ref DependenciesLayer
-        - !Ref SharedLayer
-      Runtime: nodejs18.x
-      Timeout: 30
-      Policies:
-        - Statement:
-            - Action:
-                - ssm:GetParameter*
-              Effect: Allow
-              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
-        - Statement:
-            - Action:
-                - logs:CreateLogGroup
-                - logs:CreateLogStream
-                - logs:PutLogEvents
-              Effect: Allow
-              Resource: '*'
-  JobcodesFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    DependsOn:
-      - JobcodesFunction
-    Properties:
-      LogGroupName: !Sub /aws/lambda/${JobcodesFunction}
+      LogGroupName: !Sub /aws/lambda/${GetTimesheetDataFunction}
       RetentionInDays: 30
   BasecampTokenFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
@@ -444,24 +372,6 @@ Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
   # Find out more about other implicit resources you can reference within SAM
   # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
-  PTOBalancesFunction:
-    Description: 'PTO Balances Lambda Function ARN'
-    Value: !GetAtt PTOBalancesFunction.Arn
-  PTOBalancesFunctionIamRole:
-    Description: 'Implicit IAM Role created for PTO Balances function'
-    Value: !GetAtt PTOBalancesFunctionRole.Arn
-  MonthlyHoursFunction:
-    Description: 'Time Sheets Lambda Function ARN'
-    Value: !GetAtt MonthlyHoursFunction.Arn
-  MonthlyHoursFunctionIamRole:
-    Description: 'Implicit IAM Role created for Time Sheets function'
-    Value: !GetAtt MonthlyHoursFunctionRole.Arn
-  JobcodesFunction:
-    Description: 'Jobcodes Lambda Function ARN'
-    Value: !GetAtt JobcodesFunction.Arn
-  JobcodesFunctionIamRole:
-    Description: 'Implicit IAM Role created for Jobcodes function'
-    Value: !GetAtt JobcodesFunctionRole.Arn
   BasecampTokenFunction:
     Description: 'Basecamp Token Lambda Function ARN'
     Value: !GetAtt BasecampTokenFunction.Arn

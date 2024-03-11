@@ -1,8 +1,0 @@
-{
-  "name": "pto-balances",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Retrieves PTO balances from TSheets API for given user",
-  "author": "Case Consulting",
-  "main": "app.js"
-}
