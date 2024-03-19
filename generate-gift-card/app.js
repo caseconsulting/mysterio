@@ -182,7 +182,7 @@ function hmac_binary(key, data) {
  */
 async function start() {
   try {
-    const DATE_TIME_STRING = dateUtils.add(dateUtils.now(), 5, 'hour', DATE_FORMAT);
+    const DATE_TIME_STRING = dateUtils.format(dateUtils.now('Etc/GMT'), null, DATE_FORMAT);
     console.info('Attempting to retrieve system parameter secrets');
     const [ACCESS_KEY, SECREY_KEY, PARTNER_ID] = await Promise.all([
       getSecret('/Amazon/Incentives/AccessKey'),
