@@ -179,6 +179,11 @@ Resources:
                 - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
         - Statement:
             - Action:
+                - kms:Decrypt
+              Effect: Allow
+              Resource: '*'
+        - Statement:
+            - Action:
                 - logs:CreateLogGroup
                 - logs:CreateLogStream
                 - logs:PutLogEvents
