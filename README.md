@@ -99,7 +99,7 @@ https://docs.aws.amazon.com/serverless-application-model/
 
 https://docs.aws.amazon.com/sdk-for-javascript/
 
-we're currently using version 2
+we're currently using version 3
 
 **Axios:**
 
