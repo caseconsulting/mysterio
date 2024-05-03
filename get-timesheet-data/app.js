@@ -73,6 +73,7 @@ function getNonBillableCodes(timesheetsData, jobcodesData) {
   let codes = new Set();
   _.forEach(timesheetsData, (timesheet) => {
     let jobcode = getJobcode(timesheet.jobcodeId, jobcodesData);
+    if (!jobcode) jobcode = { id: 0, parentId: 8690454, type: 'regular', name: 'undefined' }; // admins can submit timesheets without jobcodes, make sure it doesn't break the function
     if (isNonBillable(jobcode, jobcodesData, nonBillableids)) codes.add(jobcode.name);
   });
   return Array.from(codes);
