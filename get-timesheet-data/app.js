@@ -1,5 +1,5 @@
-const axios = require('axios');
 const _ = require('lodash');
+const axios = require('axios');
 const dateUtils = require('dateUtils'); // from shared lambda layer
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 const ssmClient = new SSMClient({ region: 'us-east-1' });
@@ -27,8 +27,6 @@ async function start(event) {
     accessToken = await getSecret('/TSheets/accessToken');
     let employeeNumber = event.employeeNumber;
     let onlyPto = event.onlyPto;
-    let startDate = event.startDate;
-    let endDate = event.endDate;
     // get QuickBooks user
     let userData = await getUser(employeeNumber);
     let [userId, user] = Object.entries(userData)[0];
@@ -41,6 +39,9 @@ async function start(event) {
       let ptoBalances = _.mapKeys(user.pto_balances, (value, key) => getJobcode(key, ptoJobcodes)?.name);
       return { statusCode: 200, body: { ptoBalances: ptoBalances } };
     }
+    let periods = event.periods;
+    let startDate = periods[0].startDate;
+    let endDate = periods[periods.length - 1].endDate;
     // get Quickbooks user jobcodes and timesheets data
     let { jobcodes: jobcodesData, timesheets: timesheetsData } = await getTimesheets(startDate, endDate, userId);
     // merge regular jobcodes with pto jobcodes
@@ -48,7 +49,7 @@ async function start(event) {
     // calculate how many days are entered in the future
     let supplementalData = getSupplementalData(timesheetsData, jobcodesData);
     // group timesheet entries by month and each month by jobcodes with the sum of their duration
-    let periodTimesheets = getPeriodTimesheets(timesheetsData, jobcodesData, startDate, endDate);
+    let periodTimesheets = getPeriodTimesheets(timesheetsData, jobcodesData, periods);
     // set pto balances
     let ptoBalances = _.mapKeys(user.pto_balances, (value, key) => getJobcode(key, jobcodesData)?.name);
     return Promise.resolve({
@@ -73,7 +74,7 @@ function getNonBillableCodes(timesheetsData, jobcodesData) {
   let codes = new Set();
   _.forEach(timesheetsData, (timesheet) => {
     let jobcode = getJobcode(timesheet.jobcodeId, jobcodesData);
-    if (!jobcode) jobcode = { id: 0, parentId: 8690454, type: 'regular', name: 'undefined' }; // admins can submit timesheets without jobcodes, make sure it doesn't break the function
+    if (!jobcode) jobcode = { id: 0, parentId: 8690454, type: 'regular', name: 'undefined' };
     if (isNonBillable(jobcode, jobcodesData, nonBillableids)) codes.add(jobcode.name);
   });
   return Array.from(codes);
@@ -134,26 +135,16 @@ function getSupplementalData(timesheetsData, jobcodesData) {
  * @param {String} endDate - The period end date (in YYYY-MM format)
  * @returns Object - The timesheets grouped by month and year
  */
-function getPeriodTimesheets(timesheetsData, jobcodesData, startDate, endDate) {
-  // group by month
-  let periodTimesheets = _.groupBy(timesheetsData, ({ date }) => dateUtils.format(date, null, 'YYYY-MM'));
-  // set each month of the year to empty object
-  for (let i = startDate; dateUtils.isSameOrBefore(i, endDate, 'month'); i = dateUtils.add(i, 1, 'month', 'YYYY-MM')) {
-    let index = dateUtils.format(i, null, 'YYYY-MM');
-    if (!periodTimesheets[index]) {
-      periodTimesheets[index] = {};
-    }
-  }
-  // group timesheet entries by jobcode names and duration for each month
-  _.forEach(periodTimesheets, (timesheetsArr, month) => {
-    // group timesheet entries by jobcode names
-    periodTimesheets[month] = _.groupBy(
-      timesheetsArr,
-      (timesheet) => getJobcode(timesheet.jobcodeId, jobcodesData)?.name
+function getPeriodTimesheets(timesheetsData, jobcodesData, periods) {
+  let periodTimesheets = [];
+  _.forEach(periods, (p) => {
+    p.timesheets = _.filter(timesheetsData, ({ date }) =>
+      dateUtils.isBetween(date, p.startDate, p.endDate, 'day', '[]')
     );
-    _.forEach(periodTimesheets[month], (jobcodeTimesheets, jobcodeName) => {
+    p.timesheets = _.groupBy(p.timesheets, (timesheet) => getJobcode(timesheet.jobcodeId, jobcodesData)?.name);
+    _.forEach(p.timesheets, (jobcodeTimesheets, jobcodeName) => {
       // Assign the duration sum of each months jobcode
-      periodTimesheets[month][jobcodeName] = _.reduce(
+      p.timesheets[jobcodeName] = _.reduce(
         jobcodeTimesheets,
         (sum, timesheet) => {
           return (sum += timesheet.duration);
@@ -161,6 +152,7 @@ function getPeriodTimesheets(timesheetsData, jobcodesData, startDate, endDate) {
         0
       );
     });
+    periodTimesheets.push(p);
   });
   return periodTimesheets;
 } // getPeriodTimesheets
