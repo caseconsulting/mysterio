@@ -272,7 +272,7 @@ function getTimesheetDateBatches(startDate, endDate) {
   let startBatchDate = dateUtils.startOf(startDate, 'day');
   let endBatchDate = dateUtils.endOf(dateUtils.add(startDate, 1, 'month', dateUtils.DEFAULT_ISOFORMAT), 'month');
   let today = dateUtils.getTodaysDate(dateUtils.DEFAULT_ISOFORMAT);
-  while (dateUtils.isBefore(startBatchDate, endDate, 'month')) {
+  while (dateUtils.isBefore(startBatchDate, endDate, 'day')) {
     batches.push({ startDate: startBatchDate, endDate: endBatchDate });
     // get next 2 months
     startBatchDate = dateUtils.startOf(dateUtils.add(endBatchDate, 1, 'month', dateUtils.DEFAULT_ISOFORMAT), 'month');
