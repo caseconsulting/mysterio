@@ -61,7 +61,7 @@ Resources:
       Layers:
         - !Ref DependenciesLayer
         - !Ref SharedLayer
-      Runtime: nodejs18.x
+      Runtime: nodejs20.x
       Timeout: 30
       Policies:
         - Statement:
@@ -97,7 +97,7 @@ Resources:
       Layers:
         - !Ref DependenciesLayer
         - !Ref SharedLayer
-      Runtime: nodejs18.x
+      Runtime: nodejs20.x
       Timeout: 30
       Policies:
         - Statement:
@@ -132,7 +132,7 @@ Resources:
       Layers:
         - !Ref DependenciesLayer
         - !Ref SharedLayer
-      Runtime: nodejs18.x
+      Runtime: nodejs20.x
       Timeout: 30
       Policies:
         - Statement:
@@ -168,7 +168,7 @@ Resources:
       Layers:
         - !Ref DependenciesLayer
         - !Ref SharedLayer
-      Runtime: nodejs18.x
+      Runtime: nodejs20.x
       Timeout: 30
       Policies:
         - Statement:
@@ -209,7 +209,7 @@ Resources:
       Layers:
         - !Ref DependenciesLayer
         - !Ref SharedLayer
-      Runtime: nodejs18.x
+      Runtime: nodejs20.x
       Timeout: 30
       Policies:
         - Statement:
@@ -244,7 +244,7 @@ Resources:
       Layers:
         - !Ref DependenciesLayer
         - !Ref SharedLayer
-      Runtime: nodejs18.x
+      Runtime: nodejs20.x
       Timeout: 30
       Policies:
         - Statement:
@@ -279,7 +279,7 @@ Resources:
       Layers:
         - !Ref DependenciesLayer
         - !Ref SharedLayer
-      Runtime: nodejs18.x
+      Runtime: nodejs20.x
       Timeout: 30
       Policies:
         - Statement:
@@ -320,7 +320,7 @@ Resources:
       Layers:
         - !Ref DependenciesLayer
         - !Ref SharedLayer
-      Runtime: nodejs18.x
+      Runtime: nodejs20.x
       Timeout: 30
       Policies:
         - Statement:
@@ -358,7 +358,7 @@ Resources:
       Description: Packages for lambda functions.
       ContentUri: layers/dependencies
       CompatibleRuntimes:
-        - nodejs18.x
+        - nodejs20.x
       RetentionPolicy: Retain
   SharedLayer:
     Type: AWS::Serverless::LayerVersion
@@ -370,7 +370,7 @@ Resources:
       Description: Shared code for lambda functions.
       ContentUri: layers/shared
       CompatibleRuntimes:
-        - nodejs18.x
+        - nodejs20.x
       RetentionPolicy: Retain
 
 Outputs:
