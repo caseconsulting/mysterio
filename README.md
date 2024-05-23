@@ -75,13 +75,6 @@ npm run deploy:dev
 5. Check mysterio-dev-JobcodesFunctionRole
 6. Add
 
-### Twitter
-
-1. Twitter
-2. Key users - Add
-3. Check mysterio-dev-TwitterTokenFunctionRole
-4. Add
-
 ### Basecamp
 
 1. Basecamp
@@ -95,11 +88,9 @@ npm run deploy:dev
 
 https://docs.aws.amazon.com/serverless-application-model/
 
-**AWS_SDK:**
+**AWS SDK V3:**
 
 https://docs.aws.amazon.com/sdk-for-javascript/
-
-we're currently using version 3
 
 **Axios:**
 
@@ -116,3 +107,21 @@ https://day.js.org/docs/en/installation/installation
 **Cloudformation:**
 
 https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html
+
+**ADP API Central and Workforce Now**
+
+https://api-central.adp.com/projects
+
+https://developers.adp.com/build/api-explorer/hcm-offrg-wfn
+
+**Amazon Incentives**
+
+https://www.amazon.com/gc/corp/payments/dashboard
+
+**BambooHR API**
+
+https://documentation.bamboohr.com/docs/getting-started
+
+**QuickBooks Timesheets API**
+
+https://tsheetsteam.github.io/api_docs/#getting-started
