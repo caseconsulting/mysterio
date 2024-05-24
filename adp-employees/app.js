@@ -2,7 +2,7 @@ const axios = require('axios');
 const fs = require('fs');
 const https = require('https');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
-const { LambdaClient, InvokeCommand } = require('@aws-sdk/client-lambda');
+const { invokeLambda } = require('utils');
 
 const ssmClient = new SSMClient({ region: 'us-east-1' });
 const STAGE = process.env.STAGE;
@@ -20,25 +20,14 @@ async function getSecret(secretName) {
 } // getSecret
 
 /**
- * Invokes lambda function with given params
- *
- * @param params - params to invoke lambda function with
- * @return object if successful, error otherwise
- */
-async function invokeLambda(params) {
-  const client = new LambdaClient();
-  const command = new InvokeCommand(params);
-  const resp = await client.send(command);
-  return JSON.parse(Buffer.from(resp.Payload));
-} // invokeLambda
-
-/**
  * Gets the access token by invoking the get access token lambda functions
  * @returns
  */
-async function getADPAccessToken() {
+async function getADPAccessToken(account, connector) {
+  let payload = { account, connector };
   let params = {
     FunctionName: `mysterio-adp-token-${STAGE}`,
+    Payload: JSON.stringify(payload),
     Qualifier: '$LATEST'
   };
   let result = await invokeLambda(params);
@@ -48,15 +37,18 @@ async function getADPAccessToken() {
 /*
  * Begin execution of BambooHR Employees Lambda Function
  */
-async function start() {
+async function start(event) {
   try {
     console.info('Getting ADP access token and SSL certificate for CASE API Central account');
     // get ADP credentials from aws parameter store
     // note: access token lasts 60 minutes
+    let account = event.account;
+    let connector = event.connector;
+    let query = event.query || '';
     let [accessToken, cert, key] = await Promise.all([
-      getADPAccessToken(),
-      getSecret('/ADP/SSLCert'),
-      getSecret('/ADP/SSLKey')
+      getADPAccessToken(account, connector),
+      getSecret(`/ADP/${account}/SSLCert`),
+      getSecret(`/ADP/${account}/SSLKey`)
     ]);
 
     // ADP requires certificate signing with each API call
@@ -70,7 +62,7 @@ async function start() {
 
     const options = {
       method: 'GET',
-      url: 'https://api.adp.com/hr/v2/workers?$top=5000',
+      url: `https://api.adp.com/hr/v2/workers?$top=5000&${query}`,
       headers: { Authorization: `Bearer ${accessToken}` },
       httpsAgent: httpsAgent
     };
@@ -80,7 +72,7 @@ async function start() {
     console.info('Returning all ADP employee data');
     return { statusCode: 200, body: result.data.workers };
   } catch (err) {
-    console.info('Error retrieving ADP employees: ' + err);
+    console.info('Error retrieving ADP employees: ' + err?.response?.data || err);
     throw new Error(err);
   }
 } // start

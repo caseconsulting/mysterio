@@ -6,6 +6,12 @@ const { getTimesheetDateBatches } = require('./shared');
 
 let accessToken;
 
+/**
+ * The handler for quickbooks timesheet data
+ *
+ * @param {Object} event - The lambda event
+ * @returns Object - The timesheet data
+ */
 async function handler(event) {
   try {
     let employeeNumber = event.employeeNumber;
@@ -39,13 +45,13 @@ async function handler(event) {
     let ptoBalances = _.mapKeys(user.pto_balances, (value, key) => getJobcode(key, jobcodesData)?.name);
     return Promise.resolve({
       statusCode: 200,
-      body: { timesheets: periodTimesheets, ptoBalances: ptoBalances, supplementalData: supplementalData }
+      body: { timesheets: periodTimesheets, ptoBalances, supplementalData, system: 'QuickBooks' }
     });
   } catch (err) {
     console.log(err);
     return err;
   }
-}
+} // handler
 
 /**
  * Returns the user's non-billable jobcodes.
