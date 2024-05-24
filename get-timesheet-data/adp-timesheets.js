@@ -52,8 +52,17 @@ async function handler(event) {
       body: { timesheets: periodTimesheets, ptoBalances, supplementalData, aoid, system: 'ADP' }
     });
   } catch (err) {
-    console.log(err.response?.data || err);
-    return err.response?.data || err;
+    console.log(JSON.stringify(err.response?.data) || err);
+    if (
+      err.response?.data?.confirmMessage?.processMessages?.[0]?.userMessage?.codeValue ===
+        'err_SupervisorIDDoesnotexists' ||
+      err.response?.data?.response?.applicationCode?.messageTitle === 'MobileBaseAuthorizeAttribute'
+    ) {
+      // this error happens 15% of the time for whatever reason, run it back
+      return await handler(event);
+    } else {
+      return err.response?.data || err;
+    }
   }
 } // handler
 
