@@ -133,14 +133,16 @@ async function getTimesheets(aoid, startDate, endDate) {
       if (dt.payCode.shortName === 'Regular') {
         dt.payCode.shortName = regularJobcode;
       } else {
-        nonBillables.add(dt.payCode.shortName);
+        let name = dt.payCode.shortName;
+        if (name === 'Paid Time Off') name = 'PTO';
+        nonBillables.add(name);
       }
     });
   });
   timesheets = _.flatten(_.map(timesheets, (t) => t.dailyTotals));
   timesheets = _.map(timesheets, ({ entryDate, payCode, timeDuration }) => ({
     date: entryDate,
-    jobcode: payCode.shortName,
+    jobcode: payCode.shortName === 'Paid Time Off' ? 'PTO' : payCode.shortName,
     duration: convertToSeconds(timeDuration)
   }));
   return timesheets;
@@ -193,7 +195,9 @@ async function getPtoBalances(aoid) {
     // some balances do not have a numeric quantity, filter those out
     if (Number.isInteger(Math.floor(quantity))) {
       quantity = quantity * 60 * 60; // 0 if there is no quantity value
-      ptoBalances[b.timeOffPolicyCode.shortName] = quantity;
+      let name = b.timeOffPolicyCode.shortName;
+      if (name === 'COMP TIME') name = 'Comp';
+      ptoBalances[name] = quantity;
     }
   });
   return ptoBalances;
