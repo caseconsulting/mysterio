@@ -191,7 +191,7 @@ async function getPtoBalances(aoid) {
   const result = await axios(options);
   let ptoBalances = {};
   _.forEach(result.data?.timeOffBalances[0]?.timeOffPolicyBalances, (b) => {
-    let quantity = b.policyBalances[0].totalQuantity?.quantityValue;
+    let quantity = b.policyBalances?.[0]?.totalQuantity?.quantityValue;
     // some balances do not have a numeric quantity, filter those out
     if (Number.isInteger(Math.floor(quantity))) {
       quantity = quantity * 60 * 60; // 0 if there is no quantity value

@@ -52,7 +52,6 @@ async function start(event) {
       httpsAgent: httpsAgent
     };
     const result = await axios(options);
-    console.log('here6');
     // return the ADP access token data
     console.info('Returning ADP access token');
     return { statusCode: 200, body: result.data.access_token }; // note: access token lasts 60 minutes
