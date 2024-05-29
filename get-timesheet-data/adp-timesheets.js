@@ -24,7 +24,7 @@ async function handler(event) {
     let onlyPto = event.onlyPto;
     let aoid = event.aoid;
     account = event.account;
-    nonBillables = new Set();
+    nonBillables = new Set(['Acct', 'RECRUITING', 'EA', 'IT Support Specialist']);
     await initializeCredentials();
     if (!aoid) {
       // ADP aoid is not stored in employee object, find it through employee number
@@ -191,7 +191,7 @@ async function getPtoBalances(aoid) {
   const result = await axios(options);
   let ptoBalances = {};
   _.forEach(result.data?.timeOffBalances[0]?.timeOffPolicyBalances, (b) => {
-    let quantity = b.policyBalances?.[0]?.totalQuantity?.quantityValue;
+    let quantity = b.policyBalances[0].totalQuantity?.quantityValue;
     // some balances do not have a numeric quantity, filter those out
     if (Number.isInteger(Math.floor(quantity))) {
       quantity = quantity * 60 * 60; // 0 if there is no quantity value
@@ -251,12 +251,12 @@ async function getEmployees() {
     let employees = result.body;
     employees = _.filter(employees, (e) => e.workerStatus.statusCode.codeValue === 'Active');
     // TODO REMOVE BEFORE DEPLOYING TO PROD
-    employees[0].customFieldGroup.stringFields[2].stringValue = '990';
-    employees[1].customFieldGroup.stringFields[2].stringValue = '991';
-    employees[2].customFieldGroup.stringFields[2].stringValue = '992';
-    employees[3].customFieldGroup.stringFields[2].stringValue = '993';
-    employees[4].customFieldGroup.stringFields[2].stringValue = '994';
-    employees[5].customFieldGroup.stringFields[2].stringValue = '995';
+    employees[5].customFieldGroup.stringFields[2].stringValue = '990';
+    employees[9].customFieldGroup.stringFields[2].stringValue = '991';
+    employees[15].customFieldGroup.stringFields[2].stringValue = '992';
+    employees[18].customFieldGroup.stringFields[2].stringValue = '993';
+    employees[22].customFieldGroup.stringFields[2].stringValue = '994';
+    employees[32].customFieldGroup.stringFields[2].stringValue = '995';
     return employees;
   } catch (err) {
     throw err;
