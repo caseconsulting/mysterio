@@ -250,13 +250,6 @@ async function getEmployees() {
     let result = await invokeLambda(params);
     let employees = result.body;
     employees = _.filter(employees, (e) => e.workerStatus.statusCode.codeValue === 'Active');
-    // TODO REMOVE BEFORE DEPLOYING TO PROD
-    employees[5].customFieldGroup.stringFields[2].stringValue = '990';
-    employees[9].customFieldGroup.stringFields[2].stringValue = '991';
-    employees[15].customFieldGroup.stringFields[2].stringValue = '992';
-    employees[18].customFieldGroup.stringFields[2].stringValue = '993';
-    employees[22].customFieldGroup.stringFields[2].stringValue = '994';
-    employees[32].customFieldGroup.stringFields[2].stringValue = '995';
     return employees;
   } catch (err) {
     throw err;
