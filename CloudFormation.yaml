@@ -163,7 +163,7 @@ Resources:
         - - mysterio-get-timesheet-data-
           - !Ref Stage
       CodeUri: get-timesheet-data/
-      Description: Retrieves timesheet data from Quickbooks API for given user between a date range
+      Description: Retrieves timesheet data from Quickbooks/ADP API for given user between a date range
       Handler: app.handler
       Layers:
         - !Ref DependenciesLayer
@@ -177,6 +177,13 @@ Resources:
               Effect: Allow
               Resource:
                 - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/ADP/*
+        - Statement:
+            - Action:
+                - lambda:InvokeFunction
+                - lambda:InvokeAsync
+              Effect: Allow
+              Resource: '*'
         - Statement:
             - Action:
                 - kms:Decrypt

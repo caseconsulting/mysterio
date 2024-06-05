@@ -37,8 +37,10 @@ async function invokeLambda(params) {
  * @returns
  */
 async function getADPAccessToken() {
+  let payload = { account: 'CASE', connector: 'Employees' };
   let params = {
     FunctionName: `mysterio-adp-token-${STAGE}`,
+    Payload: JSON.stringify(payload),
     Qualifier: '$LATEST'
   };
   let result = await invokeLambda(params);
@@ -55,8 +57,8 @@ async function start(event) {
     // note: access token lasts 60 minutes
     let [accessToken, cert, key] = await Promise.all([
       getADPAccessToken(),
-      getSecret('/ADP/SSLCert'),
-      getSecret('/ADP/SSLKey')
+      getSecret('/ADP/CASE/SSLCert'),
+      getSecret('/ADP/CASE/SSLKey')
     ]);
 
     let updatesToMake = event.updates;
