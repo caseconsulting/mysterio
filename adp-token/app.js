@@ -20,31 +20,30 @@ async function getSecret(secretName) {
 /*
  * Begin execution of BambooHR Employees Lambda Function
  */
-async function start() {
+async function start(event) {
   try {
-    console.info('Getting ADP credentials for CASE API Central account');
+    console.info('Getting ADP credentials from API Central account');
+    let account = event.account;
+    let connector = event.connector;
     // get ADP credentials from aws parameter store
     let [clientID, clientSecret, cert, key] = await Promise.all([
-      getSecret('/ADP/ClientID'),
-      getSecret('/ADP/ClientSecret'),
-      getSecret('/ADP/SSLCert'),
-      getSecret('/ADP/SSLKey')
+      getSecret(`/ADP/${account}/${connector}/ClientID`),
+      getSecret(`/ADP/${account}/${connector}/ClientSecret`),
+      getSecret(`/ADP/${account}/SSLCert`),
+      getSecret(`/ADP/${account}/SSLKey`)
     ]);
     // ADP requires certificate signing with each API call
     fs.writeFileSync('/tmp/ssl_cert.pem', cert);
     fs.writeFileSync('/tmp/ssl_key.key', key);
-
     const httpsAgent = new https.Agent({
       cert: fs.readFileSync('/tmp/ssl_cert.pem'),
       key: fs.readFileSync('/tmp/ssl_key.key')
     });
-
     let data = qs.stringify({
       grant_type: 'client_credentials',
       client_id: clientID,
       client_secret: clientSecret
     });
-
     const options = {
       method: 'POST',
       url: 'https://accounts.adp.com/auth/oauth/v2/token',
@@ -52,7 +51,6 @@ async function start() {
       data: data,
       httpsAgent: httpsAgent
     };
-
     const result = await axios(options);
     // return the ADP access token data
     console.info('Returning ADP access token');
@@ -61,7 +59,7 @@ async function start() {
     console.info('Error retrieving ADP access token: ' + err);
     throw new Error(err);
   }
-}
+} // start
 
 /**
  *
