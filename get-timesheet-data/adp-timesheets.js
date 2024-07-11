@@ -211,7 +211,8 @@ async function getPtoBalances(aoid) {
  */
 function getSupplementalData(timesheets, endDate) {
   let days = 0;
-  let duration = 0;
+  let futureDuration = 0;
+  let todayDuration = 0;
   let today = dateUtils.getTodaysDate(dateUtils.DEFAULT_ISOFORMAT);
   // get timesheets after today
   let futureTimesheets = _.filter(
@@ -219,6 +220,9 @@ function getSupplementalData(timesheets, endDate) {
     (timesheet) =>
       dateUtils.isAfter(timesheet.date, today, 'day') && dateUtils.isSameOrBefore(timesheet.date, endDate, 'day')
   );
+  // get timesheets entered today and get duration
+  let todaysTimesheets = _.filter(timesheets, (timesheet) => dateUtils.isSame(timesheet.date, today, 'day'));
+  todayDuration = _.sumBy(todaysTimesheets, (timesheet) => timesheet.duration);
   // group timesheets by day they were submitted to allow getting amount of future days
   let groupedFutureTimesheets = _.groupBy(futureTimesheets, ({ date }) =>
     dateUtils.format(date, null, dateUtils.DEFAULT_ISOFORMAT)
@@ -226,11 +230,11 @@ function getSupplementalData(timesheets, endDate) {
   _.forEach(groupedFutureTimesheets, (timesheets, date) => {
     days += 1;
     _.forEach(timesheets, (timesheet) => {
-      duration += timesheet.duration;
+      futureDuration += timesheet.duration;
     });
   });
   nonBillables = [...nonBillables];
-  return { future: { days, duration }, nonBillables };
+  return { today: todayDuration, future: { days, duration: futureDuration }, nonBillables };
 } // getSupplementalData
 
 /**
