@@ -163,12 +163,15 @@ Resources:
         - - mysterio-get-timesheet-data-
           - !Ref Stage
       CodeUri: get-timesheet-data/
+      AutoPublishAlias: !Ref Stage
       Description: Retrieves timesheet data from Quickbooks/ADP API for given user between a date range
       Handler: app.handler
       Layers:
         - !Ref DependenciesLayer
         - !Ref SharedLayer
       Runtime: nodejs20.x
+      ProvisionedConcurrencyConfig:
+        ProvisionedConcurrentExecutions: 5
       Timeout: 30
       Policies:
         - Statement:
