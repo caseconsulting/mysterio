@@ -4,10 +4,11 @@
     "npm": ">=10.5.0"
   },
   "dependencies": {
-    "@aws-sdk/client-lambda": "3.662.0",
-    "@aws-sdk/client-ssm": "3.662.0",
-    "axios": "1.7.7",
-    "dayjs": "1.11.13",
+    "@aws-sdk/client-lambda": "3.590.0",
+    "@aws-sdk/client-sns": "3.590.0",
+    "@aws-sdk/client-ssm": "3.590.0",
+    "axios": "1.7.2",
+    "dayjs": "1.11.11",
     "lodash": "4.17.21",
     "qs": "6.13.0",
     "xml2js": "0.6.2"

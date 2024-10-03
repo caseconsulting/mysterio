@@ -206,6 +206,80 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${GetTimesheetDataFunction}
       RetentionInDays: 30
+  TimesheetSubmissionReminderFunction:
+    Type: 'AWS::Serverless::Function' # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: !Join
+        - ''
+        - - mysterio-timesheet-submission-reminder-
+          - !Ref Stage
+      Description: Sends text messages to employees who have not submitted their hours on the last workday of the month
+      Handler: app.handler
+      Layers:
+        - !Ref DependenciesLayer
+        - !Ref SharedLayer
+      Timeout: 900
+      CodeUri: timesheet-submission-reminder/
+      Events:
+        FriendlyReminderSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 14 * * ? *)
+        UrgentReminderSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 19 * * ? *)
+      Environment:
+        Variables:
+          STAGE: !Ref Stage
+      Runtime: nodejs20.x
+      Policies:
+        - Statement:
+            - Action:
+                - dynamodb:Scan
+                - dynamodb:Query
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-employees
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-employees-sensitive
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-tags/*
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/ADP/*
+        - Statement:
+            - Action:
+                - sns:Publish
+              Effect: Allow
+              Resource: '*'
+        - Statement:
+            - Action:
+                - lambda:InvokeFunction
+                - lambda:InvokeAsync
+              Effect: Allow
+              Resource: '*'
+        - Statement:
+            - Action:
+                - kms:Decrypt
+              Effect: Allow
+              Resource: '*'
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
+  TimesheetSubmissionReminderFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - TimesheetSubmissionReminderFunction
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${TimesheetSubmissionReminderFunction}
+      RetentionInDays: 30
   BasecampTokenFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
