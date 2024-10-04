@@ -1,6 +1,5 @@
 const _filter = require('lodash/filter');
 const _find = require('lodash/find');
-const _forEach = require('lodash/forEach');
 const _map = require('lodash/map');
 
 const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
@@ -52,7 +51,7 @@ async function start() {
 
 async function _getPortalEmployees() {
   const basicCommand = new ScanCommand({
-    ProjectionExpression: 'id, employeeNumber, publicPhoneNumbers, workStatus, hireDate',
+    ProjectionExpression: 'id, employeeNumber, publicPhoneNumbers, workStatus, hireDate, cykAoid',
     TableName: `${STAGE}-employees`
   });
   const sensitiveCommand = new ScanCommand({
@@ -95,15 +94,22 @@ async function _getPortalEmployees() {
 }
 
 async function _sendReminder(employee) {
-  let phoneNumber = employee.phoneNumber?.replace(/-/g, '');
-  if (!phoneNumber) return;
-  let publishCommand = new PublishCommand({
-    PhoneNumber: `+1${phoneNumber}`,
-    Message: 'hi'
-  });
-  let resp = await snsClient.send(publishCommand);
-  console.log(resp);
-  return resp;
+  try {
+    let phoneNumber = employee.phoneNumber?.replace(/-/g, '');
+    if (!phoneNumber) throw { message: `Phone number does not exist for employee number ${employee.employeeNumber}` };
+    let publishCommand = new PublishCommand({
+      PhoneNumber: `+1${phoneNumber}`,
+      Message: 'hi'
+    });
+    console.log(`Attempting to send message to employee number ${employee.employeeNumber}`);
+    let resp = await snsClient.send(publishCommand);
+    console.log(`Successfully to sent message to employee number ${employee.employeeNumber}`);
+    console.log(resp);
+    return resp;
+  } catch (err) {
+    console.log(`Failed to send message to employee number ${employee.employeeNumber}`);
+    return err;
+  }
 }
 
 /**
