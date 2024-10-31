@@ -17,20 +17,30 @@ const STAGE = process.env.STAGE;
 let accessToken, cert, key, httpsAgent;
 let cykAdpEmployees;
 
-function _isCykReminderDay() {
-  let timePeriod = _getCykCurrentPeriod();
+function _isCykReminderDay(day) {
   let today = getTodaysDate(DEFAULT_ISOFORMAT);
+  let timePeriod = _getCykPeriod(today);
+  if (isSame(today, timePeriod.startDate, 'day')) {
+    today = subtract(today, 1, 'day', DEFAULT_ISOFORMAT);
+    timePeriod = _getCykPeriod(today);
+  }
   let lastDay = timePeriod.endDate;
   let isoWeekDay = getIsoWeekday(lastDay);
   let daysToSubtract = Math.max(isoWeekDay - 5, 0);
   let lastWorkDay = subtract(lastDay, daysToSubtract, 'day', DEFAULT_ISOFORMAT);
-  return isSame(today, lastWorkDay, 'day');
+  let lastWorkDayPlusOne = add(lastWorkDay, 1, 'day', DEFAULT_ISOFORMAT);
+  return (isSame(today, lastWorkDay, 'day') && day === 1) || (isSame(today, lastWorkDayPlusOne, 'day') && day === 2);
 }
 
 async function _shouldSendCykEmployeeReminder(employee) {
   await initializeCredentials();
   let aoid = await getAoid(employee);
-  let timePeriod = _getCykCurrentPeriod();
+  let today = getTodaysDate(DEFAULT_ISOFORMAT);
+  let timePeriod = _getCykPeriod(today);
+  if (isSame(today, timePeriod.startDate, 'day')) {
+    today = subtract(today, 1, 'day', DEFAULT_ISOFORMAT);
+    timePeriod = _getCykPeriod(today);
+  }
   let hoursSubmitted = await getHoursSubmitted(aoid, timePeriod.startDate, timePeriod.endDate);
   let hoursRequired = getHoursRequired(employee, timePeriod.startDate, timePeriod.endDate);
   return hoursRequired > hoursSubmitted;
@@ -81,22 +91,21 @@ async function getADPAccessToken() {
 } // getADPAccessToken
 
 /**
- * Gets the current bi-weekly pay period for CYK employees.
+ * Gets the bi-weekly pay period for CYK employees.
  *
- * @returns Object - The start and end date of the current bi-weekly period
+ * @returns Object - The start and end date of the bi-weekly period
  */
-function _getCykCurrentPeriod() {
+function _getCykPeriod(date) {
   const CYK_ORIG_START_DATE = '2024-04-15';
   const CYK_ORIG_END_DATE = '2024-04-28';
-  let today = getTodaysDate();
   let startDate = _cloneDeep(CYK_ORIG_START_DATE);
   let endDate = _cloneDeep(CYK_ORIG_END_DATE);
-  while (!isBetween(today, startDate, endDate, 'day', '[]')) {
+  while (!isBetween(date, startDate, endDate, 'day', '[]')) {
     startDate = add(startDate, 14, 'day', DEFAULT_ISOFORMAT);
     endDate = add(endDate, 14, 'day', DEFAULT_ISOFORMAT);
   }
   return { startDate, endDate };
-} // _getCykCurrentPeriod
+} // _getCykPeriod
 
 /**
  * Gets the ADP employees.

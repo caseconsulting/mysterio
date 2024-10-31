@@ -8,19 +8,31 @@ const {
   endOf,
   format,
   getIsoWeekday,
+  add,
   subtract,
   isSame,
   DEFAULT_ISOFORMAT
 } = require('dateUtils');
+
 let accessToken;
 
-function _isCaseReminderDay() {
+function _isCaseReminderDay(day) {
+  let todaySubtracted = false;
   let today = getTodaysDate(DEFAULT_ISOFORMAT);
+  if (isSame(today, startOf(today, 'month'), 'day')) {
+    today = subtract(today, 1, 'day', DEFAULT_ISOFORMAT);
+    todaySubtracted = true;
+  }
   let lastDay = endOf(today, 'month');
   let isoWeekDay = getIsoWeekday(lastDay);
   let daysToSubtract = Math.max(isoWeekDay - 5, 0);
   let lastWorkDay = subtract(lastDay, daysToSubtract, 'day', DEFAULT_ISOFORMAT);
-  return isSame(today, lastWorkDay, 'day');
+  let lastWorkDayPlusOne = add(lastWorkDay, 1, 'day', DEFAULT_ISOFORMAT);
+  return (
+    (isSame(today, lastWorkDay, 'day') && !todaySubtracted && day === 1) ||
+    (isSame(today, lastWorkDayPlusOne, 'day') && !todaySubtracted && day === 2) ||
+    (isSame(today, lastWorkDay, 'day') && todaySubtracted && day === 2)
+  );
 }
 
 async function _shouldSendCaseEmployeeReminder(employee) {
@@ -28,6 +40,9 @@ async function _shouldSendCaseEmployeeReminder(employee) {
   let qbUser = await _getUser(employee.employeeNumber);
   let userId = Object.keys(qbUser)?.[0];
   let today = getTodaysDate();
+  if (isSame(today, startOf(today, 'month'), 'day')) {
+    today = subtract(today, 1, 'day', DEFAULT_ISOFORMAT);
+  }
   let startDate = startOf(today, 'month');
   let endDate = endOf(today, 'month');
   let hoursSubmitted = await _getHoursSubmitted(userId, startDate, endDate);

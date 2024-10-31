@@ -221,14 +221,33 @@ Resources:
       Timeout: 900
       CodeUri: timesheet-submission-reminder/
       Events:
-        FriendlyReminderSchedule:
+        ReminderSchedule:
           Type: Schedule
           Properties:
-            Schedule: cron(0 14 * * ? *)
-        UrgentReminderSchedule:
+            Schedule: cron(0 0 * * ? *) # 8pm US (for last workday)
+            Name: !Join
+              - ''
+              - - mysterio-
+                - !Ref Stage
+                - -timesheet-submission-reminder-message-1-day-1
+        ReminderSchedule2:
           Type: Schedule
           Properties:
-            Schedule: cron(0 19 * * ? *)
+            Schedule: cron(0 11 * * ? *) # 7am US (for day after last workday)
+            Name: !Join
+              - ''
+              - - mysterio-
+                - !Ref Stage
+                - -timesheet-submission-reminder-message-1-day-2
+        ReminderSchedule3:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 18 * * ? *) # 4pm US (for day after last workday)
+            Name: !Join
+              - ''
+              - - mysterio-
+                - !Ref Stage
+                - -timesheet-submission-reminder-message-2-day-2
       Environment:
         Variables:
           STAGE: !Ref Stage
@@ -238,6 +257,7 @@ Resources:
             - Action:
                 - dynamodb:Scan
                 - dynamodb:Query
+                - dynamodb:UpdateItem
               Effect: Allow
               Resource:
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-employees
@@ -253,6 +273,7 @@ Resources:
         - Statement:
             - Action:
                 - sns:Publish
+                - sns:ListPhoneNumbersOptedOut
               Effect: Allow
               Resource: '*'
         - Statement:
