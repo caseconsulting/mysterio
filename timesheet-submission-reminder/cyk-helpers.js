@@ -17,6 +17,12 @@ const STAGE = process.env.STAGE;
 let accessToken, cert, key, httpsAgent;
 let cykAdpEmployees;
 
+/**
+ * Checks to see if today is the last work day of the pay period or 1 day after the last work day.
+ *
+ * @param {Number} day - 1 or 2, 1 being first reminder day 2 being second reminder day
+ * @returns Boolean - True if employees should be notified today
+ */
 function _isCykReminderDay(day) {
   let today = getTodaysDate(DEFAULT_ISOFORMAT);
   let timePeriod = _getCykPeriod(today);
@@ -30,8 +36,15 @@ function _isCykReminderDay(day) {
   let lastWorkDay = subtract(lastDay, daysToSubtract, 'day', DEFAULT_ISOFORMAT);
   let lastWorkDayPlusOne = add(lastWorkDay, 1, 'day', DEFAULT_ISOFORMAT);
   return (isSame(today, lastWorkDay, 'day') && day === 1) || (isSame(today, lastWorkDayPlusOne, 'day') && day === 2);
-}
+} // _isCykReminderDay
 
+/**
+ * Checks if an employee has not submitted the correct amount of timesheet hours for the
+ * pay period.
+ *
+ * @param {Object} employee - The employee to check
+ * @returns Boolean - True if the employee has not met their pay period hours
+ */
 async function _shouldSendCykEmployeeReminder(employee) {
   await initializeCredentials();
   let aoid = await getAoid(employee);
@@ -44,8 +57,14 @@ async function _shouldSendCykEmployeeReminder(employee) {
   let hoursSubmitted = await getHoursSubmitted(aoid, timePeriod.startDate, timePeriod.endDate);
   let hoursRequired = getHoursRequired(employee, timePeriod.startDate, timePeriod.endDate);
   return hoursRequired > hoursSubmitted;
-}
+} // _shouldSendCykEmployeeReminder
 
+/**
+ * Gets the ADP aoid.
+ *
+ * @param {Object} employee - The employee object
+ * @returns String - The ADP AOID
+ */
 async function getAoid(employee) {
   let aoid = employee.cykAoid;
   if (!aoid) {
@@ -57,8 +76,11 @@ async function getAoid(employee) {
     aoid = emp.associateOID;
   }
   return aoid;
-}
+} // getAoid
 
+/**
+ * Initializes ADP credendials used for making API calls.
+ */
 async function initializeCredentials() {
   if (!accessToken || !cert || !key || !httpsAgent) {
     [accessToken, cert, key] = await Promise.all([
@@ -69,7 +91,7 @@ async function initializeCredentials() {
     // ADP requires certificate signing with each API call
     httpsAgent = new https.Agent({ cert, key });
   }
-}
+} // initializeCredentials
 
 /**
  * Gets the access token by invoking the get access token lambda functions

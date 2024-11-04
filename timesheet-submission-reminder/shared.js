@@ -3,6 +3,14 @@ const { add, getIsoWeekday, isAfter, DEFAULT_ISOFORMAT } = require('dateUtils');
 
 const ssmClient = new SSMClient({ region: 'us-east-1' });
 
+/**
+ * Gets the work hours required for a given period of time.
+ *
+ * @param {Object} employee - The employee
+ * @param {String} startDate - The start date
+ * @param {String} endDate - The end date
+ * @returns Number - The amount of work hours needed
+ */
 function getHoursRequired(employee, startDate, endDate) {
   let workDays = 0;
   let hireDate = employee.hireDate;
@@ -18,7 +26,7 @@ function getHoursRequired(employee, startDate, endDate) {
     startDate = add(startDate, 1, 'day', DEFAULT_ISOFORMAT);
   }
   return workDays * (8 * (employee.workStatus / 100));
-}
+} // getHoursRequired
 
 /*
  * Access system manager parameter store and return secret value of the given name.

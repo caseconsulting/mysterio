@@ -23,6 +23,12 @@ const STAGE = process.env.STAGE;
 // make sure the phone number attached to the employee number is your own number
 const TEST_EMPLOYEE_NUMBERS = [10066];
 
+/**
+ * Start of the timesheet submission reminder process.
+ *
+ * @param {Number} day - 1 or 2, 1 being first reminder day 2 being second reminder day
+ * @returns Array - The array from employee numbers to send reminders to
+ */
 async function start(day) {
   let employeesReminded = [];
   let portalEmployees = await _getPortalEmployees();
@@ -53,8 +59,13 @@ async function start(day) {
 
     return employeesReminded;
   }
-}
+} // start
 
+/**
+ * Gets the portal employees objects.
+ *
+ * @returns Array - The array of portal employees
+ */
 async function _getPortalEmployees() {
   const basicCommand = new ScanCommand({
     ProjectionExpression: 'id, employeeNumber, publicPhoneNumbers, workStatus, hireDate, cykAoid',
@@ -98,12 +109,24 @@ async function _getPortalEmployees() {
   employees = _filter(employees, (e) => e.workStatus > 0);
 
   return employees;
-}
+} // _getPortalEmployees
 
+/**
+ * Formats a phone number from how it is stored in the portal, to SMS format.
+ *
+ * @param {String} phone - The Portal formatted phone number
+ * @returns - The SMS formatted phone number
+ */
 function _getSMSPhoneNumber(phone) {
   return phone?.number ? `+1${phone.number?.replace(/-/g, '')}` : null;
-}
+} // _getSMSPhoneNumber
 
+/**
+ * Gets the list of opted out phone numbers, and updates an employees phone number object to be opted-out
+ * if they are listed as opted-in. This essentially serves as a data sync.
+ *
+ * @param {Array} portalEmployees - The array of portal employee objects
+ */
 async function _manageEmployeesOptOutList(portalEmployees) {
   const command = new ListPhoneNumbersOptedOutCommand({});
   const response = await snsClient.send(command);
@@ -122,8 +145,14 @@ async function _manageEmployeesOptOutList(portalEmployees) {
     }
   });
   if (promises.length > 0) await Promise.all(promises);
-}
+} // _manageEmployeesOptOutList
 
+/**
+ * Sends an SMS reminder to an employee.
+ *
+ * @param {Object} employee - The employee to send a reminder to
+ * @returns Object - The SNS client response
+ */
 async function _sendReminder(employee) {
   try {
     if (STAGE === 'prod' || (STAGE !== 'prod' && TEST_EMPLOYEE_NUMBERS.includes(employee.employeeNumber))) {
@@ -147,7 +176,7 @@ async function _sendReminder(employee) {
     console.log(`Failed to send text message to employee number ${employee.employeeNumber}`);
     return err;
   }
-}
+} // _sendReminder
 
 /**
  * Updates an entry in the dynamodb table.

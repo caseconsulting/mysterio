@@ -16,6 +16,12 @@ const {
 
 let accessToken;
 
+/**
+ * Checks to see if today is the last work day of the month or 1 day after the last work day.
+ *
+ * @param {Number} day - 1 or 2, 1 being first reminder day 2 being second reminder day
+ * @returns Boolean - True if employees should be notified today
+ */
 function _isCaseReminderDay(day) {
   let todaySubtracted = false;
   let today = getTodaysDate(DEFAULT_ISOFORMAT);
@@ -33,8 +39,15 @@ function _isCaseReminderDay(day) {
     (isSame(today, lastWorkDayPlusOne, 'day') && !todaySubtracted && day === 2) ||
     (isSame(today, lastWorkDay, 'day') && todaySubtracted && day === 2)
   );
-}
+} // _isCaseReminderDay
 
+/**
+ * Checks if an employee has not submitted the correct amount of timesheet hours for the
+ * pay period.
+ *
+ * @param {Object} employee - The employee to check
+ * @returns Boolean - True if the employee has not met their pay period hours
+ */
 async function _shouldSendCaseEmployeeReminder(employee) {
   await _getAccessToken();
   let qbUser = await _getUser(employee.employeeNumber);
@@ -48,13 +61,24 @@ async function _shouldSendCaseEmployeeReminder(employee) {
   let hoursSubmitted = await _getHoursSubmitted(userId, startDate, endDate);
   let hoursRequired = getHoursRequired(employee, startDate, endDate);
   return hoursRequired > hoursSubmitted;
-}
+} // _shouldSendCaseEmployeeReminder
 
+/**
+ * Gets the QuickBooks access token.
+ *
+ * @returns String - The QuickBooks access token
+ */
 async function _getAccessToken() {
   if (!accessToken) accessToken = await getSecret('/TSheets/accessToken');
   return accessToken;
-}
+} // _getAccessToken
 
+/**
+ * Gets the QuickBooks user object from an employee number.
+ *
+ * @param {Number} employeeNumber - The employee number
+ * @returns Object - The QuickBooks user
+ */
 async function _getUser(employeeNumber) {
   try {
     // set options for TSheet API call
@@ -78,7 +102,7 @@ async function _getUser(employeeNumber) {
   } catch (err) {
     return Promise.reject(err);
   }
-}
+} // _getUser
 
 /**
  * Gets the user's timesheets within a given time period.
