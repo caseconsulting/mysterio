@@ -4,7 +4,7 @@
   "private": true,
   "description": "Facade for external APIs",
   "repository": "https://github.com/caseconsulting/mysterio",
-  "author": "Case Consulting",
+  "author": "CASE",
   "scripts": {
     "build": "sam build -t CloudFormation.yaml",
     "deploy:dev": "npm run build && npm run package:dev && npm run deploy:packaged:dev",
