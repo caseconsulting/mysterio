@@ -139,7 +139,7 @@ async function getTimesheets(aoid, startDate, endDate) {
       }
     });
   });
-  timesheets = _.flatten(_.map(timesheets, (t) => t.dailyTotals));
+  timesheets = _.compact(_.flatten(_.map(timesheets, (t) => t.dailyTotals)));
   timesheets = _.map(timesheets, ({ entryDate, payCode, timeDuration }) => ({
     date: entryDate,
     jobcode: payCode.shortName === 'Paid Time Off' ? 'PTO' : payCode.shortName,
