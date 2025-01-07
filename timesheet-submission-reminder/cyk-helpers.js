@@ -35,7 +35,10 @@ function _isCykReminderDay(day) {
   let daysToSubtract = Math.max(isoWeekDay - 5, 0);
   let lastWorkDay = subtract(lastDay, daysToSubtract, 'day', DEFAULT_ISOFORMAT);
   let lastWorkDayPlusOne = add(lastWorkDay, 1, 'day', DEFAULT_ISOFORMAT);
-  return (isSame(today, lastWorkDay, 'day') && day === 1) || (isSame(today, lastWorkDayPlusOne, 'day') && day === 2);
+  let isReminderDay =
+    (isSame(today, lastWorkDay, 'day') && day === 1) || (isSame(today, lastWorkDayPlusOne, 'day') && day === 2);
+  if (isReminderDay) console.log('Today is CYK reminder day');
+  return isReminderDay;
 } // _isCykReminderDay
 
 /**
