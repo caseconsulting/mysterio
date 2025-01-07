@@ -38,7 +38,7 @@ function _isCaseReminderDay(day) {
     (isSame(today, lastWorkDay, 'day') && !todaySubtracted && day === 1) ||
     (isSame(today, lastWorkDayPlusOne, 'day') && !todaySubtracted && day === 2) ||
     (isSame(today, lastWorkDay, 'day') && todaySubtracted && day === 2);
-  if (isReminderDay) console.log('Today is CASE reminder day');
+  console.log(`Today is ${!isReminderDay ? 'not' : ''} CASE reminder day`);
   return isReminderDay;
 } // _isCaseReminderDay
 

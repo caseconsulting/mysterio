@@ -8,10 +8,9 @@ const _map = require('lodash/map');
 
 const { SNSClient, ListPhoneNumbersOptedOutCommand, PublishCommand } = require('@aws-sdk/client-sns');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, ScanCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 
 const { _isCaseReminderDay, _shouldSendCaseEmployeeReminder } = require('./case-helpers.js');
-const { _isCykReminderDay, _shouldSendCykEmployeeReminder } = require('./cyk-helpers.js');
 const { asyncForEach } = require('utils');
 
 const dbClient = new DynamoDBClient({});
@@ -33,24 +32,14 @@ async function start(day) {
   let employeesReminded = [];
   let portalEmployees = await _getPortalEmployees();
   await _manageEmployeesOptOutList(portalEmployees);
-  let isCykReminderDay = _isCykReminderDay(day);
   let isCaseReminderDay = _isCaseReminderDay(day);
-  if (isCykReminderDay || isCaseReminderDay) {
+  if (isCaseReminderDay) {
     await asyncForEach(portalEmployees, async (e) => {
       try {
-        if (e.isCyk && isCykReminderDay) {
-          let shouldSendReminder = await _shouldSendCykEmployeeReminder(e);
-          if (shouldSendReminder) {
-            _sendReminder(e);
-            employeesReminded.push(e.employeeNumber);
-          }
-        }
-        if (!e.isCyk && isCaseReminderDay) {
-          let shouldSendReminder = await _shouldSendCaseEmployeeReminder(e);
-          if (shouldSendReminder) {
-            _sendReminder(e);
-            employeesReminded.push(e.employeeNumber);
-          }
+        let shouldSendReminder = await _shouldSendCaseEmployeeReminder(e);
+        if (shouldSendReminder) {
+          _sendReminder(e);
+          employeesReminded.push(e.employeeNumber);
         }
       } catch (err) {
         console.log(`An error occurred for employee number ${e.employeeNumber}: ${JSON.stringify(err)}`);
@@ -76,19 +65,10 @@ async function _getPortalEmployees() {
       ProjectionExpression: 'id, privatePhoneNumbers',
       TableName: `${STAGE}-employees-sensitive`
     });
-    const tagCommand = new QueryCommand({
-      IndexName: 'tagName-index',
-      KeyConditionExpression: `tagName = :queryKey`,
-      ExpressionAttributeValues: {
-        ':queryKey': 'CYK'
-      },
-      TableName: `${STAGE}-tags`
-    });
 
     const [basicEmployees, sensitiveEmployees, cykTag] = await Promise.all([
       docClient.send(basicCommand),
-      docClient.send(sensitiveCommand),
-      docClient.send(tagCommand)
+      docClient.send(sensitiveCommand)
     ]);
 
     // merge and organize data
@@ -105,8 +85,7 @@ async function _getPortalEmployees() {
         ...basicEmployee,
         ...sensitiveEmployee,
         phoneNumber,
-        isOptedOut,
-        isCyk: cykTag.Items?.[0].employees.includes(basicEmployee.id)
+        isOptedOut
       };
     });
     // get only active employees
