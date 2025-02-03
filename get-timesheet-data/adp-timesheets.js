@@ -23,7 +23,7 @@ async function handler(event) {
     let employeeNumber = event.employeeNumber;
     let onlyPto = event.onlyPto;
     let aoid = event.aoid;
-    account = event.account;
+    account = 'CYK';
     nonBillables = new Set(['Acct', 'RECRUITING', 'EA', 'IT Support Specialist']);
     await initializeCredentials();
     if (!aoid) {
