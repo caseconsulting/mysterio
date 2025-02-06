@@ -1,5 +1,6 @@
 const { handler: adpHandler } = require('./adp-timesheets');
 const { handler: quickbooksHandler } = require('./quickbooks-timesheets');
+const dateUtils = require('dateUtils'); // from shared lambda layer
 
 /**
  * Begin execution of timesheet Lambda Function
@@ -8,12 +9,53 @@ const { handler: quickbooksHandler } = require('./quickbooks-timesheets');
  */
 async function start(event) {
   try {
-    let account = event.account;
-    if (account === 'CYK') {
-      return await adpHandler(event);
-    } else {
-      return await quickbooksHandler(event);
+    // split up periods if needed
+    let adpEvent;
+    let qbEvent = event;
+    let splitForADP = event.periods && event.legacyADP;
+    if (splitForADP) {
+      let year2024 = dateUtils.setYear(dateUtils.getTodaysDate(), '2024');
+      if (dateUtils.isSame(year2024, event.periods[0].startDate, 'year')) {
+        adpYear = event.periods[0];
+        adpEvent = {
+          ...event,
+          periods: [event.periods[0]]
+        }
+        qbEvent = {
+          ...event,
+          periods: [event.periods[1]]
+        }
+      }
     }
+
+    // get ADP if needed
+    let adpResults = [];
+    if (splitForADP) adpResults = await adpHandler(adpEvent)
+    
+    // get QB always
+    let results = await quickbooksHandler(qbEvent);
+
+    // await ADP if it's being fetched
+    if (splitForADP && adpResults?.body) {
+      results = {
+        ...results,
+        body: {
+          ...results.body,
+          timesheets: [
+            ...adpResults.body.timesheets,
+            ...results.body.timesheets
+          ],
+          nonBillables: Array.from(new Set([
+            ...adpResults.body.nonBillables || [],
+            ...results.body.nonBillables || []
+          ]))
+        }
+      }
+    }
+
+    // return
+    return results;
+
   } catch (err) {
     console.log(err);
     return err;
