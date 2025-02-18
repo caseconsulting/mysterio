@@ -8,10 +8,9 @@ const _map = require('lodash/map');
 
 const { SNSClient, ListPhoneNumbersOptedOutCommand, PublishCommand } = require('@aws-sdk/client-sns');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, ScanCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 
 const { _isCaseReminderDay, _shouldSendCaseEmployeeReminder } = require('./case-helpers.js');
-const { _isCykReminderDay, _shouldSendCykEmployeeReminder } = require('./cyk-helpers.js');
 const { asyncForEach } = require('utils');
 
 const dbClient = new DynamoDBClient({});
@@ -33,24 +32,14 @@ async function start(day) {
   let employeesReminded = [];
   let portalEmployees = await _getPortalEmployees();
   await _manageEmployeesOptOutList(portalEmployees);
-  let isCykReminderDay = _isCykReminderDay(day);
   let isCaseReminderDay = _isCaseReminderDay(day);
-  if (isCykReminderDay || isCaseReminderDay) {
+  if (isCaseReminderDay) {
     await asyncForEach(portalEmployees, async (e) => {
       try {
-        if (e.isCyk && isCykReminderDay) {
-          let shouldSendReminder = await _shouldSendCykEmployeeReminder(e);
-          if (shouldSendReminder) {
-            _sendReminder(e);
-            employeesReminded.push(e.employeeNumber);
-          }
-        }
-        if (!e.isCyk && isCaseReminderDay) {
-          let shouldSendReminder = await _shouldSendCaseEmployeeReminder(e);
-          if (shouldSendReminder) {
-            _sendReminder(e);
-            employeesReminded.push(e.employeeNumber);
-          }
+        let shouldSendReminder = await _shouldSendCaseEmployeeReminder(e);
+        if (shouldSendReminder) {
+          _sendReminder(e);
+          employeesReminded.push(e.employeeNumber);
         }
       } catch (err) {
         console.log(`An error occurred for employee number ${e.employeeNumber}: ${JSON.stringify(err)}`);
@@ -67,48 +56,46 @@ async function start(day) {
  * @returns Array - The array of portal employees
  */
 async function _getPortalEmployees() {
-  const basicCommand = new ScanCommand({
-    ProjectionExpression: 'id, employeeNumber, publicPhoneNumbers, workStatus, hireDate, cykAoid',
-    TableName: `${STAGE}-employees`
-  });
-  const sensitiveCommand = new ScanCommand({
-    ProjectionExpression: 'id, privatePhoneNumbers',
-    TableName: `${STAGE}-employees-sensitive`
-  });
-  const tagCommand = new QueryCommand({
-    IndexName: 'tagName-index',
-    KeyConditionExpression: `tagName = :queryKey`,
-    ExpressionAttributeValues: {
-      ':queryKey': 'CYK'
-    },
-    TableName: `${STAGE}-tags`
-  });
+  try {
+    const basicCommand = new ScanCommand({
+      ProjectionExpression: 'id, employeeNumber, publicPhoneNumbers, workStatus, hireDate, cykAoid',
+      TableName: `${STAGE}-employees`
+    });
+    const sensitiveCommand = new ScanCommand({
+      ProjectionExpression: 'id, privatePhoneNumbers',
+      TableName: `${STAGE}-employees-sensitive`
+    });
 
-  const [basicEmployees, sensitiveEmployees, cykTag] = await Promise.all([
-    docClient.send(basicCommand),
-    docClient.send(sensitiveCommand),
-    docClient.send(tagCommand)
-  ]);
+    const [basicEmployees, sensitiveEmployees, cykTag] = await Promise.all([
+      docClient.send(basicCommand),
+      docClient.send(sensitiveCommand)
+    ]);
 
-  // merge and organize data
-  let employees = _map(basicEmployees.Items, (basicEmployee) => {
-    let sensitiveEmployee = _find(sensitiveEmployees.Items, (e) => e.id === basicEmployee.id);
-    let phoneNumbers = [...basicEmployee.publicPhoneNumbers, ...sensitiveEmployee.privatePhoneNumbers];
-    let phone = _find(phoneNumbers, (p) => p.type === 'Cell');
-    let phoneNumber = _getSMSPhoneNumber(phone);
-    let isOptedOut = phone?.smsOptedOut;
-    return {
-      ...basicEmployee,
-      ...sensitiveEmployee,
-      phoneNumber,
-      isOptedOut,
-      isCyk: cykTag.Items?.[0].employees.includes(basicEmployee.id)
-    };
-  });
-  // get only active employees
-  employees = _filter(employees, (e) => e.workStatus > 0);
-
-  return employees;
+    // merge and organize data
+    let employees = _map(basicEmployees.Items, (basicEmployee) => {
+      let sensitiveEmployee = _find(sensitiveEmployees.Items, (e) => e.id === basicEmployee.id);
+      let phoneNumbers = [
+        ...(basicEmployee.publicPhoneNumbers || []),
+        ...(sensitiveEmployee.privatePhoneNumbers || [])
+      ];
+      let phone = _find(phoneNumbers, (p) => p.type === 'Cell');
+      let phoneNumber = _getSMSPhoneNumber(phone);
+      let isOptedOut = phone?.smsOptedOut;
+      return {
+        ...basicEmployee,
+        ...sensitiveEmployee,
+        phoneNumber,
+        isOptedOut
+      };
+    });
+    // get only active employees
+    employees = _filter(employees, (e) => e.workStatus > 0);
+    console.log('Successfully retrieved Portal employees');
+    return employees;
+  } catch (err) {
+    console.log(`Failed to get Portal employees with error: ${JSON.stringify(err)}`);
+    return err;
+  }
 } // _getPortalEmployees
 
 /**
@@ -145,6 +132,7 @@ async function _manageEmployeesOptOutList(portalEmployees) {
     }
   });
   if (promises.length > 0) await Promise.all(promises);
+  console.log('Successfully managed employees opt out list');
 } // _manageEmployeesOptOutList
 
 /**
