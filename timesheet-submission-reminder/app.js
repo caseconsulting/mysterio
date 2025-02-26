@@ -34,7 +34,7 @@ async function start(day) {
   let portalEmployees = await _getPortalEmployees();
   await _manageEmployeesOptOutList(portalEmployees);
   let isCaseReminderDay = _isCaseReminderDay(day);
-  if (isCaseReminderDay || STAGE === 'test') {
+  if (isCaseReminderDay) {
     await asyncForEach(portalEmployees, async (e) => {
       try {
         let shouldSendReminder = await _shouldSendCaseEmployeeReminder(e);
