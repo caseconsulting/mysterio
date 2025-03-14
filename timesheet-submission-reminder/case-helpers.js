@@ -23,6 +23,7 @@ let accessToken;
  * @returns Boolean - True if employees should be notified today
  */
 function _isCaseReminderDay(day) {
+  // check for monthly reminder day
   let todaySubtracted = false;
   let today = getTodaysDate(DEFAULT_ISOFORMAT);
   if (isSame(today, startOf(today, 'month'), 'day')) {
@@ -34,12 +35,31 @@ function _isCaseReminderDay(day) {
   let daysToSubtract = Math.max(isoWeekDay - 5, 0);
   let lastWorkDay = subtract(lastDay, daysToSubtract, 'day', DEFAULT_ISOFORMAT);
   let lastWorkDayPlusOne = add(lastWorkDay, 1, 'day', DEFAULT_ISOFORMAT);
-  let isReminderDay =
+  let isMonthlyReminderDay =
     (isSame(today, lastWorkDay, 'day') && !todaySubtracted && day === 1) ||
     (isSame(today, lastWorkDayPlusOne, 'day') && !todaySubtracted && day === 2) ||
     (isSame(today, lastWorkDay, 'day') && todaySubtracted && day === 2);
   console.log(`Today is ${!isReminderDay ? 'not' : ''} CASE reminder day`);
-  return isReminderDay;
+  if(isMonthlyReminderDay) console.log('Today is a monthly CASE reminder day')
+
+  // check for weekly reminder day
+  let weekday = getTodaysDate('dddd').toLowerCase();
+  let isWeeklyReminderDay = false;
+  if((weekday === 'friday' && day === 1) ||
+     (weekday === 'saturday' && day === 2)) {
+    isWeeklyReminderDay = true;
+    console.log('Today is a weekly CASE reminder day')
+  }
+
+  // log result if it's neither monthly nor weekly reminder day
+  if(!isMonthlyReminderDay && !isWeeklyReminderDay) console.log('Today is not a CASE reminder day')
+
+  // return object
+  return {
+    monthly: isMonthlyReminderDay,
+    weekly: isWeeklyReminderDay,
+    any: isMonthlyReminderDay || isWeeklyReminderDay
+  };
 } // _isCaseReminderDay
 
 /**
@@ -47,19 +67,40 @@ function _isCaseReminderDay(day) {
  * pay period.
  *
  * @param {Object} employee - The employee to check
+ * @param {Object} isCaseReminderDay - Result object of _isCaseReminderDay to check monthly vs weekly
+ * @param {Object} contracts - Contracts from the Portal
  * @returns Boolean - True if the employee has not met their pay period hours
  */
-async function _shouldSendCaseEmployeeReminder(employee) {
+async function _shouldSendCaseEmployeeReminder(employee, isCaseReminderDay, portalContracts) {
+  // get monthly vs weekly
+  let checkType;
+  if(isCaseReminderDay.monthly) checkType = 'month';
+  else if (isCaseReminderDay.weekly) checkType = 'week';
+
+  // return false if this is a weekly check and the user doesn't have a weekly-reminded project
+  if(checkType === 'week') {
+    let hasWeeklyReminderProject = false;
+    outer: for (let c of employee.contracts) {
+      for (let p of c.projects) {
+        if (project.presentDate === false || !project.endDate) {
+          hasWeeklyReminderProject = true;
+          break outer;
+        }
+      }
+    }
+    if(!hasWeeklyReminderProject) return false;
+  }
+  
   await _getAccessToken();
   let qbUser = await _getUser(employee.employeeNumber);
   let userId = Object.keys(qbUser)?.[0];
   let today = getTodaysDate();
-  if (isSame(today, startOf(today, 'month'), 'day')) {
+  if (isSame(today, startOf(today, checkType), 'day')) {
     today = subtract(today, 1, 'day', DEFAULT_ISOFORMAT);
   }
-  let startDate = startOf(today, 'month');
-  let endDate = endOf(today, 'month');
-  let hoursSubmitted = await _getHoursSubmitted(userId, startDate, endDate);
+  let startDate = startOf(today, checkType);
+  let endDate = endOf(today, checkType);
+  let hoursSubmitted = await _getHoursSubmitted(userId, startDate, endDate, checkType === 'week');
   let hoursRequired = getHoursRequired(employee, startDate, endDate);
   return hoursRequired > hoursSubmitted;
 } // _shouldSendCaseEmployeeReminder
@@ -111,9 +152,10 @@ async function _getUser(employeeNumber) {
  * @param {String} startDate - The period start date
  * @param {String} endDate - The period end date
  * @param {Number} userId - The QuickBooks user ID
+ * @param {Number} allowSaved -  Include timesheets that are just 'saved', as opposed to requiring them to be 'submitted'
  * @returns Array - All user timesheets within the given time period
  */
-async function _getHoursSubmitted(userId, startDate, endDate) {
+async function _getHoursSubmitted(userId, startDate, endDate, allowSaved = false) {
   try {
     // set options for TSheet API call
     let options = {
@@ -128,10 +170,11 @@ async function _getHoursSubmitted(userId, startDate, endDate) {
         Authorization: `Bearer ${accessToken}`
       }
     };
+    console.log(JSON.stringify(options));
     // request data from TSheet API
     let timesheetResponse = await axios(options);
     let timesheets = timesheetResponse.data.results.timesheets;
-    timesheets = _filter(timesheets, (t) => t.state === 'APPROVED' || t.state === 'SUBMITTED');
+    if (!allowSaved) timesheets = _filter(timesheets, (t) => t.state === 'APPROVED' || t.state === 'SUBMITTED');
     let hoursSubmitted = _sumBy(timesheets, (t) => t.duration) / 60 / 60; // convert from seconds to hours
     return Promise.resolve(hoursSubmitted);
   } catch (err) {
