@@ -31,10 +31,8 @@ const TEST_EMPLOYEE_NUMBERS = [ 10079 ];
  */
 async function start(day) {
   let employeesReminded = [];
-  let portalEmployees = _getPortalEmployees();
-  let portalContracts = _getPortalContracts();
-  await portalEmployees;
-  await portalContracts;
+  let portalEmployees = await _getPortalEmployees();
+  let portalContracts = await _getPortalContracts();
   await _manageEmployeesOptOutList(portalEmployees);
   let isCaseReminderDay = _isCaseReminderDay(day);
   if (isCaseReminderDay.any) {
@@ -42,7 +40,7 @@ async function start(day) {
       try {
         let shouldSendReminder = await _shouldSendCaseEmployeeReminder(e, isCaseReminderDay, portalContracts);
         if (shouldSendReminder) {
-          _sendReminder(e);
+          _sendReminder(e, isCaseReminderDay);
           employeesReminded.push(e.employeeNumber);
         }
       } catch (err) {
@@ -119,7 +117,7 @@ async function _getPortalContracts() {
 
     // get only active contracts and make them an O(1) indexable object
     let contractsObj = {};
-    for(let contract of contracts) {
+    for(let contract of contracts.Items) {
       if(contract.status === 'active') {
         contractsObj[contract.id] = contract;
       }
@@ -138,7 +136,6 @@ async function _getPortalContracts() {
 async function _logMessageReminder(employee) {
   // fetch old timesheetReminders array from employee (or make new empty one)
   let newTimesheetReminders = employee.timesheetReminders ?? [];
-  console.log(`QUAMP: ${JSON.stringify(employee.timesheetReminders)}`);
   // add on the current reminder log
   newTimesheetReminders.push({
     timestamp: getTodaysDate('YYYY-MM-DD HH:mm'),
@@ -196,9 +193,17 @@ async function _manageEmployeesOptOutList(portalEmployees) {
  * Sends an SMS reminder to an employee.
  *
  * @param {Object} employee - The employee to send a reminder to
+ * @param {Object} isCaseReminderDay - result of _isCaseReminderDay() to decide which message to send 
  * @returns Object - The SNS client response
  */
-async function _sendReminder(employee) {
+async function _sendReminder(employee, isCaseReminderDay) {
+  // decide on reminder text based on type of reminder being sent
+  let reminders = {
+    week: 'CASE Alerts: You have not entered hours for this week. Please enter hours for every day in this week.',
+    month: 'CASE Alerts: This is a reminder that you have not yet met the timesheet hour requirements for this pay period. Please be sure to submit your hours as soon as possible to keep payroll running smoothly.'
+  };
+  let reminderText = reminders[isCaseReminderDay.monthly ? 'month' : 'week'];
+
   try {
     if (STAGE === 'prod' || (STAGE !== 'prod' && TEST_EMPLOYEE_NUMBERS.includes(employee.employeeNumber))) {
       if (!employee.phoneNumber)
@@ -209,8 +214,7 @@ async function _sendReminder(employee) {
       }
       let publishCommand = new PublishCommand({
         PhoneNumber: employee.phoneNumber,
-        Message:
-          'CASE Alerts: This is a reminder that you have not yet met the timesheet hour requirements for this pay period. Please be sure to submit your hours as soon as possible to keep payroll running smoothly.'
+        Message: reminderText
       });
       console.log(`Attempting to send message to employee number ${employee.employeeNumber}`);
       let resp = await snsClient.send(publishCommand);

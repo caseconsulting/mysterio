@@ -11,6 +11,7 @@ const {
   add,
   subtract,
   isSame,
+  isSameOrBefore,
   DEFAULT_ISOFORMAT
 } = require('dateUtils');
 
@@ -39,14 +40,13 @@ function _isCaseReminderDay(day) {
     (isSame(today, lastWorkDay, 'day') && !todaySubtracted && day === 1) ||
     (isSame(today, lastWorkDayPlusOne, 'day') && !todaySubtracted && day === 2) ||
     (isSame(today, lastWorkDay, 'day') && todaySubtracted && day === 2);
-  console.log(`Today is ${!isReminderDay ? 'not' : ''} CASE reminder day`);
   if(isMonthlyReminderDay) console.log('Today is a monthly CASE reminder day')
 
   // check for weekly reminder day
   let weekday = getTodaysDate('dddd').toLowerCase();
   let isWeeklyReminderDay = false;
-  if((weekday === 'friday' && day === 1) ||
-     (weekday === 'saturday' && day === 2)) {
+  if((weekday === 'tuesday' && day === 1) ||
+     (weekday === 'wednesday' && day === 2)) {
     isWeeklyReminderDay = true;
     console.log('Today is a weekly CASE reminder day')
   }
@@ -76,33 +76,45 @@ async function _shouldSendCaseEmployeeReminder(employee, isCaseReminderDay, port
   let checkType;
   if(isCaseReminderDay.monthly) checkType = 'month';
   else if (isCaseReminderDay.weekly) checkType = 'week';
+  let checkTypeIsWeek = checkType === 'week';
 
   // return false if this is a weekly check and the user doesn't have a weekly-reminded project
-  if(checkType === 'week') {
+  let today = getTodaysDate()
+  let isCurrent = (p) => p.presentDate || !p.endDate || isSameOrBefore(today, p.endDate, 'day');
+  if(checkTypeIsWeek) {
     let hasWeeklyReminderProject = false;
-    outer: for (let c of employee.contracts) {
-      for (let p of c.projects) {
-        if (project.presentDate === false || !project.endDate) {
-          hasWeeklyReminderProject = true;
-          break outer;
-        }
+    for (let c of employee.contracts) {
+      let hasCurrentProject = c.projects.some((p) => isCurrent(p));
+      if (portalContracts[c.contractId].settings?.timesheetsReminderOption == '0') {
+        hasWeeklyReminderProject = true;
       }
     }
     if(!hasWeeklyReminderProject) return false;
   }
-  
+
+  // get QB info for user
   await _getAccessToken();
   let qbUser = await _getUser(employee.employeeNumber);
   let userId = Object.keys(qbUser)?.[0];
-  let today = getTodaysDate();
+
+  // get start and end date based on week/month check type
+  // let today = getTodaysDate();
   if (isSame(today, startOf(today, checkType), 'day')) {
     today = subtract(today, 1, 'day', DEFAULT_ISOFORMAT);
   }
   let startDate = startOf(today, checkType);
   let endDate = endOf(today, checkType);
-  let hoursSubmitted = await _getHoursSubmitted(userId, startDate, endDate, checkType === 'week');
-  let hoursRequired = getHoursRequired(employee, startDate, endDate);
-  return hoursRequired > hoursSubmitted;
+
+  // return whether or not the employee needs to be notified
+  if(checkTypeIsWeek) {
+    let options = { allowSaved: true, returnSheets: true };
+    let timesheets = await _getHoursSubmitted(userId, startDate, endDate, options);
+    return Object.keys(timesheets).length < 5; // 5 days in a working week
+  } else {
+    let hoursSubmitted = await _getHoursSubmitted(userId, startDate, endDate);
+    let hoursRequired = getHoursRequired(employee, startDate, endDate);
+    return hoursRequired > hoursSubmitted;
+  }
 } // _shouldSendCaseEmployeeReminder
 
 /**
@@ -155,7 +167,13 @@ async function _getUser(employeeNumber) {
  * @param {Number} allowSaved -  Include timesheets that are just 'saved', as opposed to requiring them to be 'submitted'
  * @returns Array - All user timesheets within the given time period
  */
-async function _getHoursSubmitted(userId, startDate, endDate, allowSaved = false) {
+async function _getHoursSubmitted(userId, startDate, endDate, options = {}) {
+  // get options or set to defaults
+  let {
+    allowSaved = false,
+    returnSheets = false
+  } = options;
+
   try {
     // set options for TSheet API call
     let options = {
@@ -170,17 +188,18 @@ async function _getHoursSubmitted(userId, startDate, endDate, allowSaved = false
         Authorization: `Bearer ${accessToken}`
       }
     };
-    console.log(JSON.stringify(options));
     // request data from TSheet API
     let timesheetResponse = await axios(options);
     let timesheets = timesheetResponse.data.results.timesheets;
     if (!allowSaved) timesheets = _filter(timesheets, (t) => t.state === 'APPROVED' || t.state === 'SUBMITTED');
-    let hoursSubmitted = _sumBy(timesheets, (t) => t.duration) / 60 / 60; // convert from seconds to hours
-    return Promise.resolve(hoursSubmitted);
+    let returnValue;
+    if (returnSheets) returnValue = timesheets;
+    else returnValue = _sumBy(timesheets, (t) => t.duration) / 60 / 60; // sumb and convert from seconds to hours
+    return Promise.resolve(returnValue);
   } catch (err) {
     return Promise.reject(err);
   }
-} // getTimesheets
+} // _getHoursSubmitted
 
 module.exports = {
   _isCaseReminderDay,
