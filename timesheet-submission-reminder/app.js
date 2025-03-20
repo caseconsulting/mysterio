@@ -21,7 +21,7 @@ const STAGE = process.env.STAGE;
 
 // only use your own employee number or people you know (don't send messages to random people/employees)
 // make sure the phone number attached to the employee number is your own number
-const TEST_EMPLOYEE_NUMBERS = [ 10079, 10141, 10159 ];
+const TEST_EMPLOYEE_NUMBERS = [];
 
 /**
  * Start of the timesheet submission reminder process.
