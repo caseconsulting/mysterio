@@ -45,8 +45,8 @@ function _isCaseReminderDay(day) {
   // check for weekly reminder day
   let weekday = getTodaysDate('dddd').toLowerCase();
   let isWeeklyReminderDay = false;
-  if((weekday === 'tuesday' && day === 1) ||
-     (weekday === 'wednesday' && day === 2)) {
+  if((weekday === 'thursday' && day === 1) ||
+     (weekday === 'saturday' && day === 2)) {
     isWeeklyReminderDay = true;
     console.log('Today is a weekly CASE reminder day')
   }

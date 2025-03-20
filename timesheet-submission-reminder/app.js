@@ -21,7 +21,7 @@ const STAGE = process.env.STAGE;
 
 // only use your own employee number or people you know (don't send messages to random people/employees)
 // make sure the phone number attached to the employee number is your own number
-const TEST_EMPLOYEE_NUMBERS = [ 10079 ];
+const TEST_EMPLOYEE_NUMBERS = [ 10079, 10141, 10159 ];
 
 /**
  * Start of the timesheet submission reminder process.
@@ -199,7 +199,7 @@ async function _manageEmployeesOptOutList(portalEmployees) {
 async function _sendReminder(employee, isCaseReminderDay) {
   // decide on reminder text based on type of reminder being sent
   let reminders = {
-    week: 'CASE Alerts: You have not entered hours for this week. Please enter hours for every day in this week.',
+    week: 'A haiku:\n\nYour timesheet is late.\nDo you want to work for free?\nDo better next week.',
     month: 'CASE Alerts: This is a reminder that you have not yet met the timesheet hour requirements for this pay period. Please be sure to submit your hours as soon as possible to keep payroll running smoothly.'
   };
   let reminderText = reminders[isCaseReminderDay.monthly ? 'month' : 'week'];
