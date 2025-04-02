@@ -260,6 +260,7 @@ Resources:
                 - dynamodb:UpdateItem
               Effect: Allow
               Resource:
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-contracts
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-employees
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-employees-sensitive
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-tags/*
