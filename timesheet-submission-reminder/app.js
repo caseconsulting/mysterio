@@ -12,6 +12,7 @@ const { DynamoDBDocumentClient, ScanCommand, UpdateCommand } = require('@aws-sdk
 
 const { _isCaseReminderDay, _shouldSendCaseEmployeeReminder } = require('./case-helpers.js');
 const { asyncForEach } = require('utils');
+const { getTodaysDate } = require('dateUtils');
 
 const dbClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dbClient);
@@ -20,7 +21,7 @@ const STAGE = process.env.STAGE;
 
 // only use your own employee number or people you know (don't send messages to random people/employees)
 // make sure the phone number attached to the employee number is your own number
-const TEST_EMPLOYEE_NUMBERS = [10066];
+const TEST_EMPLOYEE_NUMBERS = [];
 
 /**
  * Start of the timesheet submission reminder process.
@@ -31,14 +32,15 @@ const TEST_EMPLOYEE_NUMBERS = [10066];
 async function start(day) {
   let employeesReminded = [];
   let portalEmployees = await _getPortalEmployees();
+  let portalContracts = await _getPortalContracts();
   await _manageEmployeesOptOutList(portalEmployees);
   let isCaseReminderDay = _isCaseReminderDay(day);
-  if (isCaseReminderDay) {
+  if (isCaseReminderDay.any) {
     await asyncForEach(portalEmployees, async (e) => {
       try {
-        let shouldSendReminder = await _shouldSendCaseEmployeeReminder(e);
+        let shouldSendReminder = await _shouldSendCaseEmployeeReminder(e, isCaseReminderDay, portalContracts);
         if (shouldSendReminder) {
-          _sendReminder(e);
+          _sendReminder(e, isCaseReminderDay);
           employeesReminded.push(e.employeeNumber);
         }
       } catch (err) {
@@ -58,7 +60,7 @@ async function start(day) {
 async function _getPortalEmployees() {
   try {
     const basicCommand = new ScanCommand({
-      ProjectionExpression: 'id, employeeNumber, publicPhoneNumbers, workStatus, hireDate, cykAoid',
+      ProjectionExpression: 'id, employeeNumber, publicPhoneNumbers, workStatus, hireDate, cykAoid, timesheetReminders, contracts',
       TableName: `${STAGE}-employees`
     });
     const sensitiveCommand = new ScanCommand({
@@ -97,6 +99,58 @@ async function _getPortalEmployees() {
     return err;
   }
 } // _getPortalEmployees
+
+/**
+ * Gets the portal contract objects.
+ *
+ * @returns Array - The array of portal contracts
+ */
+async function _getPortalContracts() {
+  try {
+    const basicCommand = new ScanCommand({
+      ProjectionExpression: 'id, contractName, #ddb_status, settings',
+      TableName: `${STAGE}-contracts`,
+      ExpressionAttributeNames: { "#ddb_status": "status" }
+    });
+
+    let contracts = await docClient.send(basicCommand);
+
+    // get only active contracts and make them an O(1) indexable object
+    let contractsObj = {};
+    for(let contract of contracts.Items) {
+      if(contract.status === 'active') {
+        contractsObj[contract.id] = contract;
+      }
+    }
+    console.log('Successfully retrieved Portal contracts');
+    return contractsObj;
+  } catch (err) {
+    console.log(`Failed to get Portal contracts with error: ${JSON.stringify(err)}`);
+    return err;
+  }
+} // _getPortalContracts
+
+/**
+ * Logs that a message was sent to an employee
+ */
+async function _logMessageReminder(employee) {
+  // fetch old timesheetReminders array from employee (or make new empty one)
+  let newTimesheetReminders = employee.timesheetReminders ?? [];
+  // add on the current reminder log
+  newTimesheetReminders.push({
+    timestamp: getTodaysDate('YYYY-MM-DD HH:mm'),
+    phoneNumber: employee.phoneNumber
+  });
+  // make a new employee for submitting to DB
+  let newEmployeeObject = {
+    ...employee,
+    timesheetReminders: newTimesheetReminders
+  }
+  // return the result of updating the attribute
+  let attribute = 'timesheetReminders';
+  let tableName = `${STAGE}-employees`;
+  return (await _updateAttributeInDB(newEmployeeObject, attribute, tableName));
+} // _logMessageReminder
 
 /**
  * Formats a phone number from how it is stored in the portal, to SMS format.
@@ -139,9 +193,17 @@ async function _manageEmployeesOptOutList(portalEmployees) {
  * Sends an SMS reminder to an employee.
  *
  * @param {Object} employee - The employee to send a reminder to
+ * @param {Object} isCaseReminderDay - result of _isCaseReminderDay() to decide which message to send 
  * @returns Object - The SNS client response
  */
-async function _sendReminder(employee) {
+async function _sendReminder(employee, isCaseReminderDay) {
+  // decide on reminder text based on type of reminder being sent
+  let reminders = {
+    week: 'CASE Alerts: Your contract requires time entries to be submitted each week. Please log into QuickBooks and complete your time entries for this week as soon as possible.',
+    month: 'CASE Alerts: This is a reminder that you have not yet met the timesheet hour requirements for this pay period. Please be sure to submit your hours as soon as possible to keep payroll running smoothly.'
+  };
+  let reminderText = reminders[isCaseReminderDay.monthly ? 'month' : 'week'];
+
   try {
     if (STAGE === 'prod' || (STAGE !== 'prod' && TEST_EMPLOYEE_NUMBERS.includes(employee.employeeNumber))) {
       if (!employee.phoneNumber)
@@ -152,12 +214,14 @@ async function _sendReminder(employee) {
       }
       let publishCommand = new PublishCommand({
         PhoneNumber: employee.phoneNumber,
-        Message:
-          'CASE Alerts: This is a reminder that you have not yet met the timesheet hour requirements for this pay period. Please be sure to submit your hours as soon as possible to keep payroll running smoothly.'
+        Message: reminderText
       });
       console.log(`Attempting to send message to employee number ${employee.employeeNumber}`);
       let resp = await snsClient.send(publishCommand);
       console.log(`Successfully sent text message to employee number ${employee.employeeNumber}`);
+      console.log(`Logging that message was sent to employee number ${employee.employeeNumber}`);
+      await _logMessageReminder(employee);
+      console.log(`Successfully logged that message was sent to employee number ${employee.employeeNumber}`);
       return resp;
     }
   } catch (err) {
@@ -169,7 +233,9 @@ async function _sendReminder(employee) {
 /**
  * Updates an entry in the dynamodb table.
  *
- * @param newDyanmoObj - object to update dynamodb entry to
+ * @param dynamoObj - new object to update dynamodb entry to
+ * @param attribute - attribute that will be updated
+ * @param tableName - name of table in which the dynamoObj is in
  * @return Object - object updated in dynamodb
  */
 async function _updateAttributeInDB(dynamoObj, attribute, tableName) {
