@@ -199,7 +199,7 @@ async function _manageEmployeesOptOutList(portalEmployees) {
 async function _sendReminder(employee, isCaseReminderDay) {
   // decide on reminder text based on type of reminder being sent
   let reminders = {
-    week: 'A haiku:\n\nYour timesheet is late.\nDo you want to work for free?\nDo better next week.',
+    week: 'CASE Alerts: Your contract requires time entries to be submitted each week. Please log into QuickBooks and complete your time entries for this week as soon as possible.',
     month: 'CASE Alerts: This is a reminder that you have not yet met the timesheet hour requirements for this pay period. Please be sure to submit your hours as soon as possible to keep payroll running smoothly.'
   };
   let reminderText = reminders[isCaseReminderDay.monthly ? 'month' : 'week'];
