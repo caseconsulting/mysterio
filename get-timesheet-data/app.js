@@ -9,10 +9,13 @@ const dateUtils = require('dateUtils'); // from shared lambda layer
  */
 async function start(event) {
   try {
+    // set to true to not get data from the Legacy CYK ADP account
+    const DISABLE_LEGACY_ADP = true;
+    
     // split up periods if needed
     let adpEvent;
     let qbEvent = event;
-    let splitForADP = event.periods && event.legacyADP;
+    let splitForADP = !DISABLE_LEGACY_ADP && event.periods && event.legacyADP;
     if (splitForADP) {
       let year2024 = dateUtils.setYear(dateUtils.getTodaysDate(), '2024');
       if (dateUtils.isSame(year2024, event.periods[0].startDate, 'year')) {
@@ -54,6 +57,7 @@ async function start(event) {
     }
 
     // return
+    if (DISABLE_LEGACY_ADP && event.legacyADP) results.body.warning = 'Timesheets do not include CYK ADP data before 01/01/2025';
     return results;
 
   } catch (err) {
