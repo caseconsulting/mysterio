@@ -200,7 +200,7 @@ async function _sendReminder(employee, isCaseReminderDay) {
   // decide on reminder text based on type of reminder being sent
   let reminders = {
     week: 'CASE Alerts: Your contract requires time entries to be submitted each week. Please log into QuickBooks and complete your time entries for this week as soon as possible.',
-    month: 'CASE Alerts: This is a reminder that you have not yet met the timesheet hour requirements for this pay period. Please be sure to submit your hours as soon as possible to keep payroll running smoothly.'
+    month: 'This is a reminder that you have not met the minimum hour requirement for this month.  Please be sure to enter and submit your hours as soon as possible to keep payroll running smoothly.'
   };
   let reminderText = reminders[isCaseReminderDay.monthly ? 'month' : 'week'];
 
