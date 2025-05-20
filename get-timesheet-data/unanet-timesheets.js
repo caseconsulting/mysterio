@@ -5,6 +5,12 @@ const { getSecret } = require('./secrets');
 const { getTimesheetDateBatches } = require('./shared');
 
 let accessToken;
+// TODO: put in parameter store or something
+const LOGIN = {
+  username: 'logburn1@consultwithcase.com',
+  password: 'Tester1'
+}
+const BASE_URL = 'https://consultwithcase-sand.unanet.biz/platform';
 
 /**
  * The handler for unanet timesheet data
@@ -16,8 +22,10 @@ async function handler(event) {
   try {
     let employeeNumber = event.employeeNumber;
     let onlyPto = event.onlyPto;
-    // get access token from parameter store
-    accessToken = await getSecret('/Unanet/accessToken');
+    // login to Unanet API account
+    accessToken = await getAccessToken();
+    console.log(accessToken);
+    return;
     // get Unanet user
     let userData = await getUser(employeeNumber);
     let [userId, user] = Object.entries(userData)[0];
@@ -52,6 +60,29 @@ async function handler(event) {
     return err;
   }
 } // handler
+
+/**
+ * Returns an auth token for the API account.
+ */
+async function getAccessToken() {
+  try {
+    // set options for TSheet API call
+    let options = {
+      method: 'POST',
+      url: BASE_URL + '/rest/login',
+      data: {
+        username: LOGIN.username,
+        password: LOGIN.password
+      }
+    };
+
+    // request data from TSheet API
+    return await axios(options);
+  } catch (err) {
+    console.log(err);
+    return err;
+  }
+}
 
 /**
  * Returns the user's non-billable jobcodes.
