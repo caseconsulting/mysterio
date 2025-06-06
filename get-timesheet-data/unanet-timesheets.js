@@ -1,13 +1,15 @@
+// util imports
 const axios = require('axios');
 const dateUtils = require('dateUtils'); // from shared lambda layer
 const { getSecret } = require('./secrets');
 
-// Dynano DB stuff
+// DynamoDB import and setup
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const dbClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dbClient);
 
+// global and stage-based vars
 let accessToken;
 const STAGE = process.env.STAGE;
 const IS_PROD = STAGE === 'prod';
@@ -25,14 +27,14 @@ const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
  */
 
 /**
- * The handler for unanet timesheet data
+ * Handler for Unanet timesheet data
  *
  * @param {Object} event - The lambda event
  * @returns Object - The timesheet data
  */
 async function handler(event) {
   try {
-    // pull out some vars
+    // pull out some vars from the event
     let onlyPto = event.onlyPto;
     let startDate = event.periods[0].startDate;
     let endDate = event.periods[0].endDate;
@@ -75,16 +77,19 @@ async function handler(event) {
 /**
  * Helper to redact data
  * 
- * @param data (probably string) to redact
+ * @param data (probably a string) to redact
  * @param type what type of data it is: ['email', 'password', 'apikey']
  */
 function redact(data, type) {
+  // return early if the data is not there
   if (!data) return data;
 
+  // helper to add stars in place of majority of data
   let sliceHelper = (str, start, end, fill='***') => {
     return str.slice(0, start) + fill + str.slice(-end);
   }
 
+  // redact data based on type
   switch(type) {
     case 'email':
       if (typeof data !== 'string') return 'undefined';
@@ -100,10 +105,12 @@ function redact(data, type) {
       return sliceHelper(data, 8, 8); // eg. eyJ0eXAi***wLQFeyjA
       break;
   }
-}
+} // redact
 
 /**
  * Returns an auth token for the API account.
+ * 
+ * @returns the auth token
  */
 async function getAccessToken() {
   try {
@@ -111,7 +118,7 @@ async function getAccessToken() {
     const LOGIN = JSON.parse(await getSecret('/Unanet/login'));
     if (!LOGIN.username || !LOGIN.password) throw new Error('Could not get login info from parameter store');
 
-    // set options for Unanet API call
+    // build options to log in with user/pass from parameter store
     let options = {
       method: 'POST',
       url: BASE_URL + '/rest/login',
@@ -132,16 +139,17 @@ async function getAccessToken() {
     console.log('Failed to get Unanet access token');
     return err;
   }
-}
+} // getAccessToken
 
 /**
- * Gets a user from Unanet API based on Portal Employee Number
+ * Gets a user's key from Unanet API based on Portal employeeNumber
  * 
  * @param employeeNumber Portal Employee Number
+ * @returns Unanet personKey
  */
 async function getUnanetKey(employeeNumber) {
   try {
-    // set options for Unanet API call
+    // build options to find employee based on employeeNumber
     let options = {
       method: 'POST',
       url: BASE_URL + '/rest/people/search',
@@ -178,17 +186,17 @@ async function getUnanetKey(employeeNumber) {
  */
 async function updateUserPersonKey(employeeNumber, personKey) {
   try {
-    // common for both commands
+    // common table for both commands
     const TableName = `${STAGE}-employees`;
 
     // find the user's ID
-    const command = new ScanCommand({
+    const scanCommand = new ScanCommand({
       ProjectionExpression: 'id',
       ExpressionAttributeValues: { ':n': Number(employeeNumber) },
       FilterExpression: 'employeeNumber = :n',
       TableName
     });
-    resp = await docClient.send(command);
+    resp = await docClient.send(scanCommand);
     if (resp.$metadata.httpStatusCode > 299) throw new Error(resp);
     if (resp.Count !== 1) throw new Error(`Could not distinguish Portal employee ${employeeNumber} (${resp.Count} options).`);
     const id = resp.Items[0].id;
@@ -202,7 +210,7 @@ async function updateUserPersonKey(employeeNumber, personKey) {
     });
     await docClient.send(updateCommand);
   } catch (err) {
-    console.log(`Failed to update entry attribute ${attribute} in ${tableName} with ID ${dynamoObj.id}`);
+    console.log(`Failed to update entry personKey of ${personKey} in ${STAGE}-employees of employee ${employeeNumber}`);
     return err;
   }
 } // updateUserPersonKey
@@ -212,9 +220,13 @@ async function updateUserPersonKey(employeeNumber, personKey) {
  * Combines any number of supplemental datas
  * 
  * @param supps the supplemental data objects
+ * @returns combined supplementalData object
  */
 function combineSupplementalData(...supps) {
+  // base default to make sure everything has at least some data
   let combined = { today: 0, future: { days: 0, duration: 0 }, nonBillables: [] };
+
+  // loop through all supplemental data and combine it
   for(let supp of supps) {
     if(!supp) continue; // avoid error if it's undefined
     combined.today += supp.today ?? 0;
@@ -222,6 +234,7 @@ function combineSupplementalData(...supps) {
     combined.future.days += supp.future?.days ?? 0;
     combined.future.duration += supp.future?.duration ?? 0;
   }
+
   return combined;
 } // combineSupplementalData
 
@@ -231,7 +244,7 @@ function combineSupplementalData(...supps) {
  * @param startDate Start date (inclusive) of timesheet data
  * @param endDate End date (inclusive) of timesheet data
  * @param userId Unanet ID of user
- * @returns 
+ * @returns user's timesheets and maybe supplemental data
  */
 async function getTimesheets(startDate, endDate, userId) {
   // get data from Unanet
@@ -249,23 +262,27 @@ async function getTimesheets(startDate, endDate, userId) {
   let timesheets = [];
   let timesheet;
   for (let month of filledTimesheets) {
-    // fill in basic date stuff
+    // fill in basic data
     timesheet = {
       startDate: month.timePeriod.beginDate,
       endDate: month.timePeriod.endDate,
       title: dateUtils.format(month.timePeriod.beginDate, null, 'MMMM'),
       timesheets: {}
     }
-    // loop through 'timeslips' and tally up for each job code
+
+    // loop through 'timeslips' (there's one per labor category per day) and tally up for each job code
     for(let slip of month.timeslips) {
+      // add the hours worked for the project
       let jobCode = getProjectName(slip.project.name);
       timesheet.timesheets[jobCode] ??= 0;
       timesheet.timesheets[jobCode] += hoursToSeconds(Number(slip.hoursWorked));
+
       // if this slip is for today, add it to supplementalData
       if (isToday(slip.workDate)) {
         supplementalData.today ??= 0;
         supplementalData.today += hoursToSeconds(Number(slip.hoursWorked));
       }
+
       // if this slip is for the future, add it to supplementalData
       if (isFuture(slip.workDate)) {
         supplementalData.future ??= { days: 0, duration: 0 };
@@ -273,28 +290,30 @@ async function getTimesheets(startDate, endDate, userId) {
         supplementalData.future.duration += hoursToSecondsNumber(Number(slip.hoursWorked));
       }
     }
+
     // add timesheet to array
     timesheets.push(timesheet);
   }
 
-  return {
-    timesheets,
-    supplementalData
-  };
+  // give back finished result
+  return { timesheets, supplementalData };
 } // getTimesheets
 
 /**
  * Gets the project name, without any decimals or numbers.
- * Eg. converts "4828.12.96.PROJECT.OY1" to "PROJECT OY1"
+ * Eg. converts "9876.54.32.PROJECT.OY1" to "PROJECT OY1"
  * 
  * @param projectName Name of the project, for converting
+ * @returns More human-friendly project name for Portal
  */
 function getProjectName(projectName) {
   // split up each part and remove any parts that are all digits
   let parts = projectName.split('.');
+  // remove part if it's just numbers
   for (let i = 0; i < parts.length; i++)
     if (/^\d+$/g.test(parts[i]))
       parts.splice(i--, 1); // post-decrement keeps i correct after splice
+  // return leftover parts and remove any extra whitespace
   return parts.join(' ').replaceAll(/ +/g, ' ');
 } // getProjectName
 
@@ -304,14 +323,11 @@ function getProjectName(projectName) {
  * @param {String} startDate - The period start date
  * @param {String} endDate - The period end date
  * @param {Number} userId - The unanet personKey
- * @returns Array - All user timesheets within the given time period
+ * @returns Array of all user timesheets within the given time period
  */
 async function getRawTimesheets(startDate, endDate, userId) {
   try {
-    let promises = [];
-    let timesheets = [];
-    let jobcodes = [];
-
+    // build options to search for user's time within the start and end dates
     let options = {
       method: 'POST',
       url: BASE_URL + '/rest/time/search',
@@ -322,8 +338,9 @@ async function getRawTimesheets(startDate, endDate, userId) {
       },
       headers: { Authorization: `Bearer ${accessToken}` }
     };
-    let resp = await axios(options);
 
+    // get response and just return it
+    let resp = await axios(options);
     return resp.data.items
   } catch (err) {
     throw new Error(err);
@@ -333,19 +350,18 @@ async function getRawTimesheets(startDate, endDate, userId) {
 /**
  * Fills the timesheets with jobcode data.
  * 
- * @param timesheets 
+ * @param timesheets timesheets from getRawTimesheets
+ * @returns timesheets with jobcode data added
  */
 async function fillTimesheetData(timesheets) {
   try {
+    // build and run promises all at once
     let promises = [];
-    for (let timesheet of timesheets) {
-      promises.push(
-        axios.get(BASE_URL + `/rest/time/${timesheet.key}`,
-          { headers: { Authorization: `Bearer ${accessToken}` } }
-        )
-      );
-    };
+    let headers = { Authorization: `Bearer ${accessToken}` };
+    for (let sheet of timesheets) promises.push(axios.get(BASE_URL + `/rest/time/${sheet.key}`, { headers }));
     let resp = await Promise.all(promises);
+
+    // pull out response data and return it all together
     let jobcodes = resp.map(res => res.data);
     return jobcodes;
   } catch (err) {
@@ -354,10 +370,10 @@ async function fillTimesheetData(timesheets) {
 } // fillTimesheetData
 
 /**
- * Get's a user's PTO balances
+ * Gets a user's PTO balances
  * 
- * @param 
- * 
+ * @param userId Unanet ID of user
+ * @return PTO balances and maybe supplemental data
  */ 
 async function getPtoBalances(userId) {
   return {
