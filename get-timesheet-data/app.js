@@ -1,5 +1,6 @@
 const { handler: adpHandler } = require('./adp-timesheets');
 const { handler: quickbooksHandler } = require('./quickbooks-timesheets');
+const { handler: unanetHandler } = require('./unanet-timesheets');
 const dateUtils = require('dateUtils'); // from shared lambda layer
 
 /**
@@ -9,6 +10,11 @@ const dateUtils = require('dateUtils'); // from shared lambda layer
  */
 async function start(event) {
   try {
+    // use Unanet all the time after certain date
+    let unanetDate = '2025-07-01';
+    let useUnanet = dateUtils.isSameOrAfter(dateUtils.getTodaysDate(), unanetDate, 'day') || process.env.STAGE !== 'prod';
+    if (useUnanet) return await unanetHandler(event);
+
     // set to true to not get data from the Legacy CYK ADP account
     const DISABLE_LEGACY_ADP = true;
     
