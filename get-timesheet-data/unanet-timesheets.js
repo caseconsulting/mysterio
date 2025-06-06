@@ -17,9 +17,9 @@ const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
 /**
  * TODO
  * - [x] Use getSecret to store login info
- * - [ ] Store/retrieve PersonKey in/from Dynamo
- *       - maybe pass this in the event to save the call
- * - [ ] More optimizations?
+ * - [x] Store/retrieve PersonKey in/from Dynamo
+ *    - [ ] pass this in the event to save the call
+ * - [ ] Misc optimizations
  * - [ ] Add non-billables
  * - [ ] Get PTO balances
  */
@@ -39,9 +39,7 @@ async function handler(event) {
 
     // log in to Unanet
     accessToken = await getAccessToken();
-    let personKey = await getUnanetKey(event.employeeNumber);
-
-    return personKey;
+    let personKey = event.unanetPersonKey ?? await getUnanetKey(event.employeeNumber);
 
     // build the return body
     let { timesheets, supplementalData: timesheetsSupp } = await getTimesheets(startDate, endDate, personKey);
@@ -158,18 +156,11 @@ async function getUnanetKey(employeeNumber) {
     if (resp.status > 299) throw new Error(resp);
 
     // pull out the employee's key
-    if (resp.data?.items?.length !== 1) throw new Error(`Could not distinguish employee ${employeeNumber} (${resp.data.length} options).`);
+    if (resp.data?.items?.length !== 1) throw new Error(`Could not distinguish Unanet employee ${employeeNumber} (${resp.data.length} options).`);
     let personKey = resp.data.items[0].key;
 
-    // store in DynamoDB
-    const command = new ScanCommand({
-      ProjectionExpression: 'id',
-      ExpressionAttributeValues: { ':n': { S: `${employeeNumber}` } },
-      FilterExpression: 'employeeNumber = :n',
-      TableName: `${STAGE}-employees`
-    });
-    resp = await docClient.send(command);
-    return resp;
+    // update user's DynamoDB object
+    await updateUserPersonKey(employeeNumber, personKey);
 
     // return for usage now
     return personKey;
@@ -178,6 +169,44 @@ async function getUnanetKey(employeeNumber) {
     return err;
   }
 } // getUnanetKey
+
+/**
+ * Updates a user's personKey in DynamoDB for future use
+ * 
+ * @param employeeNumber user's portal employee number
+ * @param personKey from Unanet to add to user's profile
+ */
+async function updateUserPersonKey(employeeNumber, personKey) {
+  try {
+    // common for both commands
+    const TableName = `${STAGE}-employees`;
+
+    // find the user's ID
+    const command = new ScanCommand({
+      ProjectionExpression: 'id',
+      ExpressionAttributeValues: { ':n': Number(employeeNumber) },
+      FilterExpression: 'employeeNumber = :n',
+      TableName
+    });
+    resp = await docClient.send(command);
+    if (resp.$metadata.httpStatusCode > 299) throw new Error(resp);
+    if (resp.Count !== 1) throw new Error(`Could not distinguish Portal employee ${employeeNumber} (${resp.Count} options).`);
+    const id = resp.Items[0].id;
+
+    // use their ID to update the personKey
+    const updateCommand = new UpdateCommand({ 
+      TableName,
+      Key: { id },
+      UpdateExpression: `set unanetPersonKey = :k`,
+      ExpressionAttributeValues: { ':k': `${personKey}` }
+    });
+    await docClient.send(updateCommand);
+  } catch (err) {
+    console.log(`Failed to update entry attribute ${attribute} in ${tableName} with ID ${dynamoObj.id}`);
+    return err;
+  }
+} // updateUserPersonKey
+
 
 /**
  * Combines any number of supplemental datas
