@@ -187,6 +187,7 @@ Resources:
                 - ssm:GetParameter*
               Effect: Allow
               Resource:
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/Unanet/login
                 - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
                 - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/ADP/*
         - Statement:
