@@ -176,6 +176,14 @@ Resources:
       Policies:
         - Statement:
             - Action:
+                - dynamodb:Scan
+                - dynamodb:Query
+                - dynamodb:UpdateItem
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-employees
+        - Statement:
+            - Action:
                 - ssm:GetParameter*
               Effect: Allow
               Resource:
