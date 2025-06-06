@@ -1,7 +1,12 @@
 const axios = require('axios');
 const dateUtils = require('dateUtils'); // from shared lambda layer
 const { getSecret } = require('./secrets');
-const { getTimesheetDateBatches } = require('./shared');
+
+// Dynano DB stuff
+const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBDocumentClient, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const dbClient = new DynamoDBClient({});
+const docClient = DynamoDBDocumentClient.from(dbClient);
 
 let accessToken;
 const STAGE = process.env.STAGE;
@@ -14,7 +19,6 @@ const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
  * - [x] Use getSecret to store login info
  * - [ ] Store/retrieve PersonKey in/from Dynamo
  *       - maybe pass this in the event to save the call
- * - [ ] Maybe use getTimesheetDateBatches
  * - [ ] More optimizations?
  * - [ ] Add non-billables
  * - [ ] Get PTO balances
@@ -35,11 +39,13 @@ async function handler(event) {
 
     // log in to Unanet
     accessToken = await getAccessToken();
-    let unanetPerson = await getUser(event.employeeNumber);
+    let personKey = await getUnanetKey(event.employeeNumber);
+
+    return personKey;
 
     // build the return body
-    let { timesheets, supplementalData: timesheetsSupp } = await getTimesheets(startDate, endDate, unanetPerson.key);
-    let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(unanetPerson.key);
+    let { timesheets, supplementalData: timesheetsSupp } = await getTimesheets(startDate, endDate, personKey);
+    let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(personKey);
     let supplementalData = combineSupplementalData(timesheetsSupp, ptoSupp);
 
     // return everything together
@@ -135,7 +141,7 @@ async function getAccessToken() {
  * 
  * @param employeeNumber Portal Employee Number
  */
-async function getUser(employeeNumber) {
+async function getUnanetKey(employeeNumber) {
   try {
     // set options for Unanet API call
     let options = {
@@ -151,14 +157,27 @@ async function getUser(employeeNumber) {
     let resp = await axios(options);
     if (resp.status > 299) throw new Error(resp);
 
-    // check the data before returning it
+    // pull out the employee's key
     if (resp.data?.items?.length !== 1) throw new Error(`Could not distinguish employee ${employeeNumber} (${resp.data.length} options).`);
-    return resp.data.items[0];
+    let personKey = resp.data.items[0].key;
+
+    // store in DynamoDB
+    const command = new ScanCommand({
+      ProjectionExpression: 'id',
+      ExpressionAttributeValues: { ':n': { S: `${employeeNumber}` } },
+      FilterExpression: 'employeeNumber = :n',
+      TableName: `${STAGE}-employees`
+    });
+    resp = await docClient.send(command);
+    return resp;
+
+    // return for usage now
+    return personKey;
   } catch (err) {
     console.log(err);
     return err;
   }
-}
+} // getUnanetKey
 
 /**
  * Combines any number of supplemental datas
