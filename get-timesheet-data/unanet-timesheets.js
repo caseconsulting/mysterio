@@ -15,15 +15,19 @@ const STAGE = process.env.STAGE;
 const IS_PROD = STAGE === 'prod';
 const URL_SUFFIX = IS_PROD ? '' : '-sand';
 const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
+const BILLABLE_CODES = [ "BILL_SVCS" ];
 
 /**
  * TODO
  * - [x] Use getSecret to store login info
  * - [x] Store/retrieve PersonKey in/from Dynamo
- *    - [ ] pass this in the event to save the call
- * - [ ] Misc optimizations
+ *    - [x] pass this in the event to save the call
+ * - [ ] Add check for event dates before summing timeslip (Unanet gives back the whole month)
+ * - [ ] Handle yearly calls correctly
+ * - [ ] Support onlyPto flag
  * - [ ] Add non-billables
  * - [ ] Get PTO balances
+ * - [ ] Update frontend to warn that future PTO in Unanet is not included in the planner
  */
 
 /**
@@ -44,9 +48,9 @@ async function handler(event) {
     let personKey = event.unanetPersonKey ?? await getUnanetKey(event.employeeNumber);
 
     // build the return body
-    let { timesheets, supplementalData: timesheetsSupp } = await getTimesheets(startDate, endDate, personKey);
+    let { timesheets, supplementalData: timeSupp } = await getTimesheets(startDate, endDate, personKey);
     let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(personKey);
-    let supplementalData = combineSupplementalData(timesheetsSupp, ptoSupp);
+    let supplementalData = combineSupplementalData(timeSupp, ptoSupp);
 
     // return everything together
     return Promise.resolve({
@@ -66,7 +70,6 @@ async function handler(event) {
         stage: STAGE ?? 'undefined',
         is_prod: IS_PROD ?? 'undefined',
         url: BASE_URL ?? 'undefined',
-        login: { user: redact(LOGIN.username, 'email'), pass: redact(LOGIN.password, 'password') },
         api_key: redact(accessToken, 'apikey'),
         err: err ?? 'undefined'
       }
@@ -259,6 +262,7 @@ async function getTimesheets(startDate, endDate, userId) {
 
   // put data in Portal format
   let supplementalData = {};
+  let nonBillables = new Set();
   let timesheets = [];
   let timesheet;
   for (let month of filledTimesheets) {
@@ -277,6 +281,11 @@ async function getTimesheets(startDate, endDate, userId) {
       timesheet.timesheets[jobCode] ??= 0;
       timesheet.timesheets[jobCode] += hoursToSeconds(Number(slip.hoursWorked));
 
+      // add bill code to non-billables if it is not marked as billable
+      if (!BILLABLE_CODES.includes(slip.projectType.name)) {
+        nonBillables.add(jobCode);
+      }
+
       // if this slip is for today, add it to supplementalData
       if (isToday(slip.workDate)) {
         supplementalData.today ??= 0;
@@ -294,6 +303,9 @@ async function getTimesheets(startDate, endDate, userId) {
     // add timesheet to array
     timesheets.push(timesheet);
   }
+
+  // add seen non-billables to supplementalData
+  supplementalData.nonBillables = Array.from(nonBillables);
 
   // give back finished result
   return { timesheets, supplementalData };
