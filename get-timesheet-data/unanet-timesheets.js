@@ -23,29 +23,31 @@ const BILLABLE_CODES = [ "BILL_SVCS" ];
  * - [x] Store/retrieve PersonKey in/from Dynamo
  *    - [x] pass this in the event to save the call
  * - [x] Add non-billables
- * - [x] Add check for event dates before summing timeslip (Unanet gives back the whole month)
+ * - [x] Add check for event dates before summing timeslip
  * 
  * Today:
  * - [x] Support onlyPto flag
  * - [x] Make title according to passed in titles
  * - [x] Handle yearly calls correctly
  * - [x] How does the frontend react to a period's timesheets being `{}`?
+ * - [x] Update frontend to warn that future PTO in Unanet is not included in the planner
  * 
  * Pending:
  * - [ ] Get PTO balances
- * - [ ] Update frontend to warn that future PTO in Unanet is not included in the planner
- *    - [ ] Will it include the current month if it's planned? Depends on API behavior
+ * - [ ] Will PTO include the current month? Need to update planner notif if so.
  */
 
 /**
- * Handler for Unanet timesheet data
+ * Handler for Unanet timesheet data.
  *
- * @param {Object} event - The lambda event
+ * @param event - The lambda event
  * @returns Object - The timesheet data
  */
 async function handler(event) {
   try {
-    
+    // pretend error
+    throw new Error('Testing error messages');
+
     // pull out some vars from the event
     let onlyPto = event.onlyPto;
     let periods = event.periods;
@@ -76,18 +78,34 @@ async function handler(event) {
     return Promise.reject({
       statusCode: 500,
       body: {
-        stage: STAGE ?? 'undefined',
-        is_prod: IS_PROD ?? 'undefined',
-        url: BASE_URL ?? 'undefined',
+        stage: STAGE ?? null,
+        is_prod: IS_PROD ?? null,
+        url: BASE_URL ?? null,
         api_key: redact(accessToken, 'apikey'),
-        err: err ?? 'undefined'
+        err: serializeError(err)
       }
     });
   }
 } // handler
 
 /**
- * Helper to redact data
+ * Helper to seralize an error
+ * 
+ * @param err the error to seralized
+ * @reutrns object of serialized data for printing/returning
+ */
+function serializeError(err) {
+  if (!err) return null;
+  if (typeof err === 'string') return err;
+  return {
+    name: err.name ?? null,
+    message: err.message ?? null,
+    stack: err.stack ?? null 
+  };
+} // serializeError
+
+/**
+ * Helper to redact data.
  * 
  * @param data (probably a string) to redact
  * @param type what type of data it is: ['email', 'password', 'apikey']
@@ -104,16 +122,16 @@ function redact(data, type) {
   // redact data based on type
   switch(type) {
     case 'email':
-      if (typeof data !== 'string') return 'undefined';
+      if (typeof data !== 'string') return null;
       let email = data.split('@');
       return sliceHelper(email[0], 2, 2) + `@${email[1]}`; // eg. un***pi@consultwithcase.com
       break;
     case 'password':
-      if (typeof data !== 'string') return 'undefined';
+      if (typeof data !== 'string') return null;
       return sliceHelper(data, 1, 1); // eg. T***1
       break;
     case 'apikey':
-      if (typeof data !== 'string') return 'undefined';
+      if (typeof data !== 'string') return null;
       return sliceHelper(data, 8, 8); // eg. eyJ0eXAi***wLQFeyjA
       break;
   }
@@ -125,111 +143,96 @@ function redact(data, type) {
  * @returns the auth token
  */
 async function getAccessToken() {
-  try {
-    // get login info from parameter store
-    const LOGIN = JSON.parse(await getSecret('/Unanet/login'));
-    if (!LOGIN.username || !LOGIN.password) throw new Error('Could not get login info from parameter store');
+  // get login info from parameter store
+  const LOGIN = JSON.parse(await getSecret('/Unanet/login'));
+  if (!LOGIN.username || !LOGIN.password) throw new Error('Could not get login info from parameter store');
 
-    // build options to log in with user/pass from parameter store
-    let options = {
-      method: 'POST',
-      url: BASE_URL + '/rest/login',
-      data: {
-        username: LOGIN.username,
-        password: LOGIN.password
-      }
-    };
+  // build options to log in with user/pass from parameter store
+  let options = {
+    method: 'POST',
+    url: BASE_URL + '/rest/login',
+    data: {
+      username: LOGIN.username,
+      password: LOGIN.password
+    }
+  };
 
-    // request data from Unanet API
-    let resp = await axios(options);
-    
-    // actually error if it doesn't work
-    if (resp.status > 299) throw new Error(resp);
+  // request data from Unanet API
+  let resp = await axios(options);
+  
+  // actually error if it doesn't work
+  if (resp.status > 299) throw new Error(resp);
 
-    return resp.data.token;
-  } catch (err) {
-    console.log('Failed to get Unanet access token');
-    return err;
-  }
+  return resp.data.token;
 } // getAccessToken
 
 /**
- * Gets a user's key from Unanet API based on Portal employeeNumber
+ * Gets a user's key from Unanet API based on Portal employeeNumber.
  * 
  * @param employeeNumber Portal Employee Number
  * @returns Unanet personKey
  */
 async function getUnanetKey(employeeNumber) {
-  try {
-    // build options to find employee based on employeeNumber
-    let options = {
-      method: 'POST',
-      url: BASE_URL + '/rest/people/search',
-      data: {
-        idCode1: employeeNumber
-      },
-      headers: { Authorization: `Bearer ${accessToken}` }
-    };
+  // build options to find employee based on employeeNumber
+  let options = {
+    method: 'POST',
+    url: BASE_URL + '/rest/people/search',
+    data: {
+      idCode1: employeeNumber
+    },
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
 
-    // request data from Unanet API
-    let resp = await axios(options);
-    if (resp.status > 299) throw new Error(resp);
+  // request data from Unanet API
+  let resp = await axios(options);
+  if (resp.status > 299) throw new Error(resp);
 
-    // pull out the employee's key
-    if (resp.data?.items?.length !== 1) throw new Error(`Could not distinguish Unanet employee ${employeeNumber} (${resp.data.length} options).`);
-    let personKey = resp.data.items[0].key;
+  // pull out the employee's key
+  if (resp.data?.items?.length !== 1) throw new Error(`Could not distinguish Unanet employee ${employeeNumber} (${resp.data.length} options).`);
+  let personKey = resp.data.items[0].key;
 
-    // update user's DynamoDB object
-    await updateUserPersonKey(employeeNumber, personKey);
+  // update user's DynamoDB object
+  await updateUserPersonKey(employeeNumber, personKey);
 
-    // return for usage now
-    return personKey;
-  } catch (err) {
-    console.log(err);
-    return err;
-  }
+  // return for usage now
+  return personKey;
 } // getUnanetKey
 
 /**
- * Updates a user's personKey in DynamoDB for future use
+ * Updates a user's personKey in DynamoDB for future use.
  * 
  * @param employeeNumber user's portal employee number
  * @param personKey from Unanet to add to user's profile
  */
 async function updateUserPersonKey(employeeNumber, personKey) {
-  try {
-    // common table for both commands
-    const TableName = `${STAGE}-employees`;
+  // common table for both commands
+  const TableName = `${STAGE}-employees`;
 
-    // find the user's ID
-    const scanCommand = new ScanCommand({
-      ProjectionExpression: 'id',
-      ExpressionAttributeValues: { ':n': Number(employeeNumber) },
-      FilterExpression: 'employeeNumber = :n',
-      TableName
-    });
-    resp = await docClient.send(scanCommand);
-    if (resp.$metadata.httpStatusCode > 299) throw new Error(resp);
-    if (resp.Count !== 1) throw new Error(`Could not distinguish Portal employee ${employeeNumber} (${resp.Count} options).`);
-    const id = resp.Items[0].id;
+  // find the user's ID
+  const scanCommand = new ScanCommand({
+    ProjectionExpression: 'id',
+    ExpressionAttributeValues: { ':n': Number(employeeNumber) },
+    FilterExpression: 'employeeNumber = :n',
+    TableName
+  });
+  resp = await docClient.send(scanCommand);
+  if (resp.$metadata.httpStatusCode > 299) throw new Error(resp);
+  if (resp.Count !== 1) throw new Error(`Could not distinguish Portal employee ${employeeNumber} (${resp.Count} options).`);
+  const id = resp.Items[0].id;
 
-    // use their ID to update the personKey
-    const updateCommand = new UpdateCommand({ 
-      TableName,
-      Key: { id },
-      UpdateExpression: `set unanetPersonKey = :k`,
-      ExpressionAttributeValues: { ':k': `${personKey}` }
-    });
-    await docClient.send(updateCommand);
-  } catch (err) {
-    console.log(`Failed to update entry personKey of ${personKey} in ${STAGE}-employees of employee ${employeeNumber}`);
-    return err;
-  }
+  // use their ID to update the personKey
+  const updateCommand = new UpdateCommand({ 
+    TableName,
+    Key: { id },
+    UpdateExpression: `set unanetPersonKey = :k`,
+    ExpressionAttributeValues: { ':k': `${personKey}` }
+  });
+  await docClient.send(updateCommand);
 } // updateUserPersonKey
 
 
 /**
- * Combines any number of supplemental data objects
+ * Combines any number of supplemental data objects.
  * 
  * @param supps the supplemental data objects
  * @returns combined supplementalData object
@@ -239,8 +242,8 @@ function combineSupplementalData(...supps) {
   let combined = { today: 0, future: { days: 0, duration: 0 }, nonBillables: [] };
 
   // loop through all supplemental data and combine it
-  for(let supp of supps) {
-    if(!supp) continue; // avoid error if it's undefined
+  for (let supp of supps) {
+    if (!supp) continue; // avoid error if it's undefined
     combined.today += supp.today ?? 0;
     combined.nonBillables = [...new Set([...combined.nonBillables, ...supp.nonBillables ?? []])];
     combined.future.days += supp.future?.days ?? 0;
@@ -251,7 +254,7 @@ function combineSupplementalData(...supps) {
 } // combineSupplementalData
 
 /**
- * Gets timesheet data for a given array of periods and a Unanet user
+ * Gets timesheet data for a given array of periods and a Unanet user.
  * 
  * @param periods array of periods to get data for
  * @param userId Unanet key of user to get data for
@@ -271,10 +274,10 @@ async function getPeriodTimesheets(periods, userId) {
   // combine all supplemental data and return everything
   let supplementalData = combineSupplementalData(...supplDatas);
   return { timesheets, supplementalData };
-}
+} // getPeriodTimesheets
 
 /**
- * Gets timesheet data by calling helper functions
+ * Gets timesheet data by calling helper functions.
  * 
  * @param startDate Start date (inclusive) of timesheet data
  * @param endDate End date (inclusive) of timesheet data
@@ -284,7 +287,7 @@ async function getPeriodTimesheets(periods, userId) {
 async function getTimesheet(startDate, endDate, title, userId) {
   // get data from Unanet
   let basicTimesheets = await getRawTimesheets(startDate, endDate, userId); // returns monthly blocks
-  let filledTimesheets = await fillTimesheetData(basicTimesheets); // returns monthly blocks with paycodes
+  let filledTimesheets = await getFullTimesheets(basicTimesheets); // returns monthly blocks with paycodes
 
   // helpful vars
   let today = dateUtils.getTodaysDate();
@@ -359,31 +362,27 @@ function getProjectName(projectName) {
 /**
  * Gets the user's timesheets within a given time period.
  *
- * @param {String} startDate - The period start date
- * @param {String} endDate - The period end date
- * @param {Number} userId - The unanet personKey
+ * @param startDate - The period start date
+ * @param endDate - The period end date
+ * @param userId - The unanet personKey
  * @returns Array of all user timesheets within the given time period
  */
 async function getRawTimesheets(startDate, endDate, userId) {
-  try {
-    // build options to search for user's time within the start and end dates
-    let options = {
-      method: 'POST',
-      url: BASE_URL + '/rest/time/search',
-      data: {
-        personKeys: [userId],
-        beginDateStart: startDate,
-        beginDateEnd: endDate
-      },
-      headers: { Authorization: `Bearer ${accessToken}` }
-    };
+  // build options to search for user's time within the start and end dates
+  let options = {
+    method: 'POST',
+    url: BASE_URL + '/rest/time/search',
+    data: {
+      personKeys: [userId],
+      beginDateStart: startDate,
+      beginDateEnd: endDate
+    },
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
 
-    // get response and just return it
-    let resp = await axios(options);
-    return resp.data.items
-  } catch (err) {
-    throw new Error(err);
-  }
+  // get response and just return it
+  let resp = await axios(options);
+  return resp.data.items
 } // getRawTimesheets
 
 /**
@@ -392,24 +391,20 @@ async function getRawTimesheets(startDate, endDate, userId) {
  * @param timesheets timesheets from getRawTimesheets
  * @returns timesheets with jobcode data added
  */
-async function fillTimesheetData(timesheets) {
-  try {
-    // build and run promises all at once
-    let promises = [];
-    let headers = { Authorization: `Bearer ${accessToken}` };
-    for (let sheet of timesheets) promises.push(axios.get(BASE_URL + `/rest/time/${sheet.key}`, { headers }));
-    let resp = await Promise.all(promises);
+async function getFullTimesheets(timesheets) {
+  // build and run promises all at once
+  let promises = [];
+  let headers = { Authorization: `Bearer ${accessToken}` };
+  for (let sheet of timesheets) promises.push(axios.get(BASE_URL + `/rest/time/${sheet.key}`, { headers }));
+  let resp = await Promise.all(promises);
 
-    // pull out response data and return it all together
-    let jobcodes = resp.map(res => res.data);
-    return jobcodes;
-  } catch (err) {
-    throw new Error(err);
-  }
-} // fillTimesheetData
+  // pull out response data and return it all together
+  let jobcodes = resp.map(res => res.data);
+  return jobcodes;
+} // getFullTimesheets
 
 /**
- * Gets a user's PTO balances
+ * Gets a user's PTO balances.
  * 
  * @param userId Unanet ID of user
  * @return PTO balances and maybe supplemental data
