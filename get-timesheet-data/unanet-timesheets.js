@@ -29,15 +29,12 @@ const BILLABLE_CODES = [ "BILL_SVCS" ];
  * - [x] Support onlyPto flag
  * - [x] Make title according to passed in titles
  * - [x] Handle yearly calls correctly
- * - [ ] How does the frontend react to a period's timesheets being `{}`?
- * 
- * Later:
- * - [ ] ???
+ * - [x] How does the frontend react to a period's timesheets being `{}`?
  * 
  * Pending:
  * - [ ] Get PTO balances
  * - [ ] Update frontend to warn that future PTO in Unanet is not included in the planner
- *    - [ ] Will it include the current month if it's planned? depends on API behavior
+ *    - [ ] Will it include the current month if it's planned? Depends on API behavior
  */
 
 /**
