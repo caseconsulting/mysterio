@@ -45,9 +45,6 @@ const BILLABLE_CODES = [ "BILL_SVCS" ];
  */
 async function handler(event) {
   try {
-    // pretend error
-    throw new Error('Testing error messages');
-
     // pull out some vars from the event
     let onlyPto = event.onlyPto;
     let periods = event.periods;
