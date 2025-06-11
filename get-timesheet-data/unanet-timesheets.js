@@ -52,11 +52,11 @@ const BILLABLE_CODES = [ "BILL_SVCS" ];
 async function handler(event) {
   try {
     // pull out vars from the event
-    let { onlyPto, periods, personKey, employeeNumber } = event;
+    let { onlyPto, periods, unanetPersonKey, employeeNumber } = event;
     
     // log in to Unanet
     accessToken = await getAccessToken();
-    personKey ??= await getUnanetPersonKey(employeeNumber);
+    unanetPersonKey ??= await getUnanetPersonKey(employeeNumber);
 
     // build the return body
     let body = { system: 'Unanet' };
@@ -71,10 +71,7 @@ async function handler(event) {
     }
 
     // return everything together
-    return Promise.resolve({
-      statusCode: 200,
-      body
-    });
+    return Promise.resolve({ statusCode: 200, body });
   } catch (err) {
     console.log(err);
     return Promise.reject({
