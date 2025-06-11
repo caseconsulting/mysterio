@@ -1,3 +1,9 @@
+/**
+ * 
+ * Unanet Swagger API: https://consultwithcase-sand.unanet.biz/platform/swagger/
+ * 
+ */
+
 // util imports
 const axios = require('axios');
 const dateUtils = require('dateUtils'); // from shared lambda layer
@@ -12,8 +18,7 @@ const docClient = DynamoDBDocumentClient.from(dbClient);
 // global and stage-based vars
 let accessToken;
 const STAGE = process.env.STAGE;
-const IS_PROD = STAGE === 'prod';
-const URL_SUFFIX = IS_PROD ? '' : '-sand';
+const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
 const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
 const BILLABLE_CODES = [ "BILL_SVCS" ];
 
@@ -31,6 +36,7 @@ const BILLABLE_CODES = [ "BILL_SVCS" ];
  * - [x] Handle yearly calls correctly
  * - [x] How does the frontend react to a period's timesheets being `{}`?
  * - [x] Update frontend to warn that future PTO in Unanet is not included in the planner
+ * - [ ] Support multiple users? (efficiently)
  * 
  * Pending:
  * - [ ] Get PTO balances
@@ -38,20 +44,19 @@ const BILLABLE_CODES = [ "BILL_SVCS" ];
  */
 
 /**
- * Handler for Unanet timesheet data.
+ * Handler for Unanet timesheet data
  *
  * @param event - The lambda event
  * @returns Object - The timesheet data
  */
 async function handler(event) {
   try {
-    // pull out some vars from the event
-    let onlyPto = event.onlyPto;
-    let periods = event.periods;
+    // pull out vars from the event
+    let { onlyPto, periods, personKey, employeeNumber } = event;
     
     // log in to Unanet
     accessToken = await getAccessToken();
-    let personKey = event.unanetPersonKey ?? await getUnanetKey(event.employeeNumber);
+    personKey ??= await getUnanetPersonKey(employeeNumber);
 
     // build the return body
     let body = { system: 'Unanet' };
@@ -76,9 +81,8 @@ async function handler(event) {
       statusCode: 500,
       body: {
         stage: STAGE ?? null,
-        is_prod: IS_PROD ?? null,
         url: BASE_URL ?? null,
-        api_key: redact(accessToken, 'apikey'),
+        api_key: redact(accessToken, 8, 8),
         err: serializeError(err)
       }
     });
@@ -86,7 +90,7 @@ async function handler(event) {
 } // handler
 
 /**
- * Gets timesheet data for a given array of periods and a Unanet user.
+ * Gets timesheet data for a given array of periods and a Unanet user
  * 
  * @param periods array of periods to get data for
  * @param userId Unanet key of user to get data for
@@ -109,10 +113,11 @@ async function getPeriodTimesheets(periods, userId) {
 } // getPeriodTimesheets
 
 /**
- * Gets timesheet data by calling helper functions.
+ * Creates a timesheet object for a given period
  * 
  * @param startDate Start date (inclusive) of timesheet data
  * @param endDate End date (inclusive) of timesheet data
+ * @param title title of the timesheet
  * @param userId Unanet ID of user
  * @returns timesheet object between start and end dates
  */
@@ -174,7 +179,7 @@ async function getTimesheet(startDate, endDate, title, userId) {
 } // getTimesheet
 
 /**
- * Gets a user's PTO balances.
+ * Gets a user's PTO balances
  * 
  * @param userId Unanet ID of user
  * @return PTO balances and maybe supplemental data
@@ -194,7 +199,7 @@ async function getPtoBalances(userId) {
 } // getPtoBalances
 
 /**
- * Updates a user's personKey in DynamoDB for future use.
+ * Updates a user's personKey in DynamoDB for future use
  * 
  * @param employeeNumber user's portal employee number
  * @param personKey from Unanet to add to user's profile
@@ -231,38 +236,34 @@ async function updateUserPersonKey(employeeNumber, personKey) {
 // |----------------------------------------------------|
 
 /**
- * Returns an auth token for the API account.
+ * Returns an auth token for the API account
  * 
  * @returns the auth token
  */
 async function getAccessToken() {
   // get login info from parameter store
-  const LOGIN = JSON.parse(await getSecret('/Unanet/login'));
-  if (!LOGIN.username || !LOGIN.password) throw new Error('Could not get login info from parameter store.');
+  let { username, password } = JSON.parse(await getSecret('/Unanet/login'));
+  if (!username || !password) throw new Error('Could not get login info from parameter store.');
 
   // build options to log in with user/pass from parameter store
   let options = {
     method: 'POST',
     url: BASE_URL + '/rest/login',
-    data: {
-      username: LOGIN.username,
-      password: LOGIN.password
-    }
+    data: { username, password }
   };
 
-  // request data from Unanet API
+  // request and return token from Unanet API
   let resp = await axios(options);
-
   return resp.data.token;
 } // getAccessToken
 
 /**
- * Gets a user's key from Unanet API based on Portal employeeNumber.
+ * Gets a user's key from Unanet API based on Portal employeeNumber
  * 
  * @param employeeNumber Portal Employee Number
  * @returns Unanet personKey
  */
-async function getUnanetKey(employeeNumber) {
+async function getUnanetPersonKey(employeeNumber) {
   // build options to find employee based on employeeNumber
   let options = {
     method: 'POST',
@@ -275,21 +276,18 @@ async function getUnanetKey(employeeNumber) {
 
   // request data from Unanet API
   let resp = await axios(options);
-  if (resp.status > 299) throw new Error(resp);
 
   // pull out the employee's key
   if (resp.data?.items?.length !== 1) throw new Error(`Could not distinguish Unanet employee ${employeeNumber} (${resp.data.length} options).`);
   let personKey = resp.data.items[0].key;
 
-  // update user's DynamoDB object
+  // update user's DynamoDB object and return for usage now
   await updateUserPersonKey(employeeNumber, personKey);
-
-  // return for usage now
   return personKey;
-} // getUnanetKey
+} // getUnanetPersonKey
 
 /**
- * Gets the user's timesheets within a given time period.
+ * Gets the user's timesheets within a given time period
  *
  * @param startDate - The period start date
  * @param endDate - The period end date
@@ -311,11 +309,11 @@ async function getRawTimesheets(startDate, endDate, userId) {
 
   // get response and just return it
   let resp = await axios(options);
-  return resp.data.items
+  return resp.data.items;
 } // getRawTimesheets
 
 /**
- * Fills the timesheets with jobcode data.
+ * Fills the timesheets with jobcode data
  * 
  * @param timesheets timesheets from getRawTimesheets
  * @returns timesheets with jobcode data added
@@ -324,12 +322,12 @@ async function getFullTimesheets(timesheets) {
   // build and run promises all at once
   let promises = [];
   let headers = { Authorization: `Bearer ${accessToken}` };
-  for (let sheet of timesheets) promises.push(axios.get(BASE_URL + `/rest/time/${sheet.key}`, { headers }));
+  for (let timesheet of timesheets) promises.push(axios.get(BASE_URL + `/rest/time/${timesheet.key}`, { headers }));
   let resp = await Promise.all(promises);
 
   // pull out response data and return it all together
-  let jobcodes = resp.map(res => res.data);
-  return jobcodes;
+  let filledTimesheets = resp.map(res => res.data);
+  return filledTimesheets;
 } // getFullTimesheets
 
 // |----------------------------------------------------|
@@ -339,7 +337,7 @@ async function getFullTimesheets(timesheets) {
 // |----------------------------------------------------|
 
 /**
- * Gets the project name, without any decimals or numbers.
+ * Gets the project name, without any decimals or numbers
  * Eg. converts "9876.54.32.PROJECT.OY1" to "PROJECT OY1"
  * 
  * @param projectName Name of the project, for converting
@@ -357,7 +355,7 @@ function getProjectName(projectName) {
 } // getProjectName
 
 /**
- * Combines any number of supplemental data objects.
+ * Combines any number of supplemental data objects
  * 
  * @param supps the supplemental data objects
  * @returns combined supplementalData object
@@ -395,36 +393,15 @@ function serializeError(err) {
 } // serializeError
 
 /**
- * Helper to redact data.
+ * Helper to redact data from a string
  * 
- * @param data (probably a string) to redact
- * @param type what type of data it is: ['email', 'password', 'apikey']
+ * @param str string to redact
+ * @param start how many characters to keep on the start
+ * @param end how many characters to keep on the end
+ * @param fill (optional) characters to fill in place of redacted data
  */
-function redact(data, type) {
-  // return early if the data is not there
-  if (!data) return data;
-
-  // helper to add stars in place of majority of data
-  let sliceHelper = (str, start, end, fill='***') => {
+function redact(str, start, end, fill='***') {
     return str.slice(0, start) + fill + str.slice(-end);
-  }
-
-  // redact data based on type
-  switch(type) {
-    case 'email':
-      if (typeof data !== 'string') return null;
-      let email = data.split('@');
-      return sliceHelper(email[0], 2, 2) + `@${email[1]}`; // eg. un***pi@consultwithcase.com
-      break;
-    case 'password':
-      if (typeof data !== 'string') return null;
-      return sliceHelper(data, 1, 1); // eg. T***1
-      break;
-    case 'apikey':
-      if (typeof data !== 'string') return null;
-      return sliceHelper(data, 8, 8); // eg. eyJ0eXAi***wLQFeyjA
-      break;
-  }
 } // redact
 
 // |----------------------------------------------------|
