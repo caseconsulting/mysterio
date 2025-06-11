@@ -18,16 +18,26 @@ const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
 const BILLABLE_CODES = [ "BILL_SVCS" ];
 
 /**
- * TODO
+ * Done:
  * - [x] Use getSecret to store login info
  * - [x] Store/retrieve PersonKey in/from Dynamo
  *    - [x] pass this in the event to save the call
- * - [ ] Add check for event dates before summing timeslip (Unanet gives back the whole month)
- * - [ ] Handle yearly calls correctly
- * - [ ] Support onlyPto flag
- * - [ ] Add non-billables
+ * - [x] Add non-billables
+ * - [x] Add check for event dates before summing timeslip (Unanet gives back the whole month)
+ * 
+ * Today:
+ * - [x] Support onlyPto flag
+ * - [x] Make title according to passed in titles
+ * - [x] Handle yearly calls correctly
+ * - [ ] How does the frontend react to a period's timesheets being `{}`?
+ * 
+ * Later:
+ * - [ ] ???
+ * 
+ * Pending:
  * - [ ] Get PTO balances
  * - [ ] Update frontend to warn that future PTO in Unanet is not included in the planner
+ *    - [ ] Will it include the current month if it's planned? depends on API behavior
  */
 
 /**
@@ -38,29 +48,31 @@ const BILLABLE_CODES = [ "BILL_SVCS" ];
  */
 async function handler(event) {
   try {
+    
     // pull out some vars from the event
     let onlyPto = event.onlyPto;
-    let startDate = event.periods[0].startDate;
-    let endDate = event.periods[0].endDate;
-
+    let periods = event.periods;
+    
     // log in to Unanet
     accessToken = await getAccessToken();
     let personKey = event.unanetPersonKey ?? await getUnanetKey(event.employeeNumber);
 
     // build the return body
-    let { timesheets, supplementalData: timeSupp } = await getTimesheets(startDate, endDate, personKey);
-    let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(personKey);
-    let supplementalData = combineSupplementalData(timeSupp, ptoSupp);
+    let body = { system: 'Unanet' };
+    if (onlyPto) {
+      let { ptoBalances } = await getPtoBalances(personKey);
+      body.ptoBalances = ptoBalances;
+    } else {
+      let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, personKey);
+      let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(personKey);
+      let supplementalData = combineSupplementalData(timeSupp, ptoSupp);
+      body = { ...body, timesheets, ptoBalances, supplementalData }
+    }
 
     // return everything together
     return Promise.resolve({
       statusCode: 200,
-      body: {
-        timesheets,
-        ptoBalances,
-        supplementalData,
-        system: 'Unanet'
-      }
+      body
     });
   } catch (err) {
     console.log(err);
@@ -220,7 +232,7 @@ async function updateUserPersonKey(employeeNumber, personKey) {
 
 
 /**
- * Combines any number of supplemental datas
+ * Combines any number of supplemental data objects
  * 
  * @param supps the supplemental data objects
  * @returns combined supplementalData object
@@ -242,17 +254,40 @@ function combineSupplementalData(...supps) {
 } // combineSupplementalData
 
 /**
+ * Gets timesheet data for a given array of periods and a Unanet user
+ * 
+ * @param periods array of periods to get data for
+ * @param userId Unanet key of user to get data for
+ * @returns timesheets and supplemental data for all periods
+ */
+async function getPeriodTimesheets(periods, userId) {
+  // get timesheets and data for all periods
+  let timesheets = [];
+  let supplDatas = [];
+  for (let period of periods) {
+    let { startDate, endDate, title } = period;
+    let { timesheet, supplementalData } = await getTimesheet(startDate, endDate, title, userId);
+    timesheets.push(timesheet);
+    supplDatas.push(supplementalData);
+  }
+
+  // combine all supplemental data and return everything
+  let supplementalData = combineSupplementalData(...supplDatas);
+  return { timesheets, supplementalData };
+}
+
+/**
  * Gets timesheet data by calling helper functions
  * 
  * @param startDate Start date (inclusive) of timesheet data
  * @param endDate End date (inclusive) of timesheet data
  * @param userId Unanet ID of user
- * @returns user's timesheets and maybe supplemental data
+ * @returns timesheet object between start and end dates
  */
-async function getTimesheets(startDate, endDate, userId) {
+async function getTimesheet(startDate, endDate, title, userId) {
   // get data from Unanet
-  let basicTimesheets = await getRawTimesheets(startDate, endDate, userId);
-  let filledTimesheets = await fillTimesheetData(basicTimesheets);
+  let basicTimesheets = await getRawTimesheets(startDate, endDate, userId); // returns monthly blocks
+  let filledTimesheets = await fillTimesheetData(basicTimesheets); // returns monthly blocks with paycodes
 
   // helpful vars
   let today = dateUtils.getTodaysDate();
@@ -260,22 +295,20 @@ async function getTimesheets(startDate, endDate, userId) {
   let isFuture = (date) => dateUtils.isAfter(date, today, 'day');
   let hoursToSeconds = (hours) => hours * 60 * 60;
 
-  // put data in Portal format
+  // vars to fill in
   let supplementalData = {};
   let nonBillables = new Set();
-  let timesheets = [];
-  let timesheet;
-  for (let month of filledTimesheets) {
-    // fill in basic data
-    timesheet = {
-      startDate: month.timePeriod.beginDate,
-      endDate: month.timePeriod.endDate,
-      title: dateUtils.format(month.timePeriod.beginDate, null, 'MMMM'),
-      timesheets: {}
-    }
+  let timesheet = { startDate, endDate, title, timesheets: {} }
 
+  // loop through each month returned from Unanet API
+  for (let month of filledTimesheets) {
     // loop through 'timeslips' (there's one per labor category per day) and tally up for each job code
-    for(let slip of month.timeslips) {
+    for (let slip of month.timeslips) {
+      // skip slips that are past the end date or before the start date
+      let beforeStart = dateUtils.isBefore(slip.workDate, startDate, 'day');
+      let afterEnd = dateUtils.isAfter(slip.workDate, endDate, 'day');
+      if (beforeStart || afterEnd) continue;
+
       // add the hours worked for the project
       let jobCode = getProjectName(slip.project.name);
       timesheet.timesheets[jobCode] ??= 0;
@@ -296,20 +329,17 @@ async function getTimesheets(startDate, endDate, userId) {
       if (isFuture(slip.workDate)) {
         supplementalData.future ??= { days: 0, duration: 0 };
         supplementalData.future.days += 1;
-        supplementalData.future.duration += hoursToSecondsNumber(Number(slip.hoursWorked));
+        supplementalData.future.duration += hoursToSeconds(Number(slip.hoursWorked));
       }
     }
-
-    // add timesheet to array
-    timesheets.push(timesheet);
   }
 
   // add seen non-billables to supplementalData
   supplementalData.nonBillables = Array.from(nonBillables);
 
   // give back finished result
-  return { timesheets, supplementalData };
-} // getTimesheets
+  return { timesheet, supplementalData };
+} // getTimesheet
 
 /**
  * Gets the project name, without any decimals or numbers.
