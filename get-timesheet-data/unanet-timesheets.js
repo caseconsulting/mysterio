@@ -86,171 +86,6 @@ async function handler(event) {
 } // handler
 
 /**
- * Helper to seralize an error
- * 
- * @param err the error to seralized
- * @reutrns object of serialized data for printing/returning
- */
-function serializeError(err) {
-  if (!err) return null;
-  if (typeof err === 'string') return err;
-  return {
-    name: err.name ?? null,
-    message: err.message ?? null,
-    stack: err.stack ?? null 
-  };
-} // serializeError
-
-/**
- * Helper to redact data.
- * 
- * @param data (probably a string) to redact
- * @param type what type of data it is: ['email', 'password', 'apikey']
- */
-function redact(data, type) {
-  // return early if the data is not there
-  if (!data) return data;
-
-  // helper to add stars in place of majority of data
-  let sliceHelper = (str, start, end, fill='***') => {
-    return str.slice(0, start) + fill + str.slice(-end);
-  }
-
-  // redact data based on type
-  switch(type) {
-    case 'email':
-      if (typeof data !== 'string') return null;
-      let email = data.split('@');
-      return sliceHelper(email[0], 2, 2) + `@${email[1]}`; // eg. un***pi@consultwithcase.com
-      break;
-    case 'password':
-      if (typeof data !== 'string') return null;
-      return sliceHelper(data, 1, 1); // eg. T***1
-      break;
-    case 'apikey':
-      if (typeof data !== 'string') return null;
-      return sliceHelper(data, 8, 8); // eg. eyJ0eXAi***wLQFeyjA
-      break;
-  }
-} // redact
-
-/**
- * Returns an auth token for the API account.
- * 
- * @returns the auth token
- */
-async function getAccessToken() {
-  // get login info from parameter store
-  const LOGIN = JSON.parse(await getSecret('/Unanet/login'));
-  if (!LOGIN.username || !LOGIN.password) throw new Error('Could not get login info from parameter store');
-
-  // build options to log in with user/pass from parameter store
-  let options = {
-    method: 'POST',
-    url: BASE_URL + '/rest/login',
-    data: {
-      username: LOGIN.username,
-      password: LOGIN.password
-    }
-  };
-
-  // request data from Unanet API
-  let resp = await axios(options);
-  
-  // actually error if it doesn't work
-  if (resp.status > 299) throw new Error(resp);
-
-  return resp.data.token;
-} // getAccessToken
-
-/**
- * Gets a user's key from Unanet API based on Portal employeeNumber.
- * 
- * @param employeeNumber Portal Employee Number
- * @returns Unanet personKey
- */
-async function getUnanetKey(employeeNumber) {
-  // build options to find employee based on employeeNumber
-  let options = {
-    method: 'POST',
-    url: BASE_URL + '/rest/people/search',
-    data: {
-      idCode1: employeeNumber
-    },
-    headers: { Authorization: `Bearer ${accessToken}` }
-  };
-
-  // request data from Unanet API
-  let resp = await axios(options);
-  if (resp.status > 299) throw new Error(resp);
-
-  // pull out the employee's key
-  if (resp.data?.items?.length !== 1) throw new Error(`Could not distinguish Unanet employee ${employeeNumber} (${resp.data.length} options).`);
-  let personKey = resp.data.items[0].key;
-
-  // update user's DynamoDB object
-  await updateUserPersonKey(employeeNumber, personKey);
-
-  // return for usage now
-  return personKey;
-} // getUnanetKey
-
-/**
- * Updates a user's personKey in DynamoDB for future use.
- * 
- * @param employeeNumber user's portal employee number
- * @param personKey from Unanet to add to user's profile
- */
-async function updateUserPersonKey(employeeNumber, personKey) {
-  // common table for both commands
-  const TableName = `${STAGE}-employees`;
-
-  // find the user's ID
-  const scanCommand = new ScanCommand({
-    ProjectionExpression: 'id',
-    ExpressionAttributeValues: { ':n': Number(employeeNumber) },
-    FilterExpression: 'employeeNumber = :n',
-    TableName
-  });
-  resp = await docClient.send(scanCommand);
-  if (resp.$metadata.httpStatusCode > 299) throw new Error(resp);
-  if (resp.Count !== 1) throw new Error(`Could not distinguish Portal employee ${employeeNumber} (${resp.Count} options).`);
-  const id = resp.Items[0].id;
-
-  // use their ID to update the personKey
-  const updateCommand = new UpdateCommand({ 
-    TableName,
-    Key: { id },
-    UpdateExpression: `set unanetPersonKey = :k`,
-    ExpressionAttributeValues: { ':k': `${personKey}` }
-  });
-  await docClient.send(updateCommand);
-} // updateUserPersonKey
-
-
-/**
- * Combines any number of supplemental data objects.
- * 
- * @param supps the supplemental data objects
- * @returns combined supplementalData object
- */
-function combineSupplementalData(...supps) {
-  // base default to make sure everything has at least some data
-  let combined = { today: 0, future: { days: 0, duration: 0 }, nonBillables: [] };
-
-  // loop through all supplemental data and combine it
-  for (let supp of supps) {
-    if (!supp) continue; // avoid error if it's undefined
-    combined.today += supp.today ?? 0;
-    combined.nonBillables = [...new Set([...combined.nonBillables, ...supp.nonBillables ?? []])];
-    combined.future.days += supp.future?.days ?? 0;
-    combined.future.duration += supp.future?.duration ?? 0;
-  }
-
-  return combined;
-} // combineSupplementalData
-
-/**
  * Gets timesheet data for a given array of periods and a Unanet user.
  * 
  * @param periods array of periods to get data for
@@ -339,22 +174,119 @@ async function getTimesheet(startDate, endDate, title, userId) {
 } // getTimesheet
 
 /**
- * Gets the project name, without any decimals or numbers.
- * Eg. converts "9876.54.32.PROJECT.OY1" to "PROJECT OY1"
+ * Gets a user's PTO balances.
  * 
- * @param projectName Name of the project, for converting
- * @returns More human-friendly project name for Portal
+ * @param userId Unanet ID of user
+ * @return PTO balances and maybe supplemental data
+ */ 
+async function getPtoBalances(userId) {
+  return {
+    ptoBalances: {
+      "Holiday": 0,
+      "Training": 0,
+      "PTO": 0,
+      "Jury Duty": 0,
+      "Maternity/Paternity Time Off": 0,
+      "Bereavement": 0
+    },
+    supplementalData: {}
+  };
+} // getPtoBalances
+
+/**
+ * Updates a user's personKey in DynamoDB for future use.
+ * 
+ * @param employeeNumber user's portal employee number
+ * @param personKey from Unanet to add to user's profile
  */
-function getProjectName(projectName) {
-  // split up each part and remove any parts that are all digits
-  let parts = projectName.split('.');
-  // remove part if it's just numbers
-  for (let i = 0; i < parts.length; i++)
-    if (/^\d+$/g.test(parts[i]))
-      parts.splice(i--, 1); // post-decrement keeps i correct after splice
-  // return leftover parts and remove any extra whitespace
-  return parts.join(' ').replaceAll(/ +/g, ' ');
-} // getProjectName
+async function updateUserPersonKey(employeeNumber, personKey) {
+  // common table for both commands
+  const TableName = `${STAGE}-employees`;
+
+  // find the user's ID
+  const scanCommand = new ScanCommand({
+    ProjectionExpression: 'id',
+    ExpressionAttributeValues: { ':n': Number(employeeNumber) },
+    FilterExpression: 'employeeNumber = :n',
+    TableName
+  });
+  resp = await docClient.send(scanCommand);
+  if (resp.Count !== 1) throw new Error(`Could not distinguish Portal employee ${employeeNumber} (${resp.Count} options).`);
+  const id = resp.Items[0].id;
+
+  // use their ID to update the personKey
+  const updateCommand = new UpdateCommand({ 
+    TableName,
+    Key: { id },
+    UpdateExpression: `set unanetPersonKey = :k`,
+    ExpressionAttributeValues: { ':k': `${personKey}` }
+  });
+  await docClient.send(updateCommand);
+} // updateUserPersonKey
+
+// |----------------------------------------------------|
+// |                                                    |
+// |                  API CONNECTIONS                   |
+// |                                                    |
+// |----------------------------------------------------|
+
+/**
+ * Returns an auth token for the API account.
+ * 
+ * @returns the auth token
+ */
+async function getAccessToken() {
+  // get login info from parameter store
+  const LOGIN = JSON.parse(await getSecret('/Unanet/login'));
+  if (!LOGIN.username || !LOGIN.password) throw new Error('Could not get login info from parameter store.');
+
+  // build options to log in with user/pass from parameter store
+  let options = {
+    method: 'POST',
+    url: BASE_URL + '/rest/login',
+    data: {
+      username: LOGIN.username,
+      password: LOGIN.password
+    }
+  };
+
+  // request data from Unanet API
+  let resp = await axios(options);
+
+  return resp.data.token;
+} // getAccessToken
+
+/**
+ * Gets a user's key from Unanet API based on Portal employeeNumber.
+ * 
+ * @param employeeNumber Portal Employee Number
+ * @returns Unanet personKey
+ */
+async function getUnanetKey(employeeNumber) {
+  // build options to find employee based on employeeNumber
+  let options = {
+    method: 'POST',
+    url: BASE_URL + '/rest/people/search',
+    data: {
+      idCode1: employeeNumber
+    },
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
+
+  // request data from Unanet API
+  let resp = await axios(options);
+  if (resp.status > 299) throw new Error(resp);
+
+  // pull out the employee's key
+  if (resp.data?.items?.length !== 1) throw new Error(`Could not distinguish Unanet employee ${employeeNumber} (${resp.data.length} options).`);
+  let personKey = resp.data.items[0].key;
+
+  // update user's DynamoDB object
+  await updateUserPersonKey(employeeNumber, personKey);
+
+  // return for usage now
+  return personKey;
+} // getUnanetKey
 
 /**
  * Gets the user's timesheets within a given time period.
@@ -400,25 +332,106 @@ async function getFullTimesheets(timesheets) {
   return jobcodes;
 } // getFullTimesheets
 
+// |----------------------------------------------------|
+// |                                                    |
+// |                       HELPERS                      |
+// |                                                    |
+// |----------------------------------------------------|
+
 /**
- * Gets a user's PTO balances.
+ * Gets the project name, without any decimals or numbers.
+ * Eg. converts "9876.54.32.PROJECT.OY1" to "PROJECT OY1"
  * 
- * @param userId Unanet ID of user
- * @return PTO balances and maybe supplemental data
- */ 
-async function getPtoBalances(userId) {
+ * @param projectName Name of the project, for converting
+ * @returns More human-friendly project name for Portal
+ */
+function getProjectName(projectName) {
+  // split up each part and remove any parts that are all digits
+  let parts = projectName.split('.');
+  // remove part if it's just numbers
+  for (let i = 0; i < parts.length; i++)
+    if (/^\d+$/g.test(parts[i]))
+      parts.splice(i--, 1); // post-decrement keeps i correct after splice
+  // return leftover parts and remove any extra whitespace
+  return parts.join(' ').replaceAll(/ +/g, ' ');
+} // getProjectName
+
+/**
+ * Combines any number of supplemental data objects.
+ * 
+ * @param supps the supplemental data objects
+ * @returns combined supplementalData object
+ */
+function combineSupplementalData(...supps) {
+  // base default to make sure everything has at least some data
+  let combined = { today: 0, future: { days: 0, duration: 0 }, nonBillables: [] };
+
+  // loop through all supplemental data and combine it
+  for (let supp of supps) {
+    if (!supp) continue; // avoid error if it's undefined
+    combined.today += supp.today ?? 0;
+    combined.nonBillables = [...new Set([...combined.nonBillables, ...supp.nonBillables ?? []])];
+    combined.future.days += supp.future?.days ?? 0;
+    combined.future.duration += supp.future?.duration ?? 0;
+  }
+
+  return combined;
+} // combineSupplementalData
+
+/**
+ * Helper to seralize an error
+ * 
+ * @param err the error to seralized
+ * @reutrns object of serialized data for printing/returning
+ */
+function serializeError(err) {
+  if (!err) return null;
+  if (typeof err === 'string') return err;
   return {
-    ptoBalances: {
-      "Holiday": 0,
-      "Training": 0,
-      "PTO": 0,
-      "Jury Duty": 0,
-      "Maternity/Paternity Time Off": 0,
-      "Bereavement": 0
-    },
-    supplementalData: {}
+    name: err.name ?? null,
+    message: err.message ?? null,
+    stack: err.stack ?? null 
   };
-} // getPtoBalances
+} // serializeError
+
+/**
+ * Helper to redact data.
+ * 
+ * @param data (probably a string) to redact
+ * @param type what type of data it is: ['email', 'password', 'apikey']
+ */
+function redact(data, type) {
+  // return early if the data is not there
+  if (!data) return data;
+
+  // helper to add stars in place of majority of data
+  let sliceHelper = (str, start, end, fill='***') => {
+    return str.slice(0, start) + fill + str.slice(-end);
+  }
+
+  // redact data based on type
+  switch(type) {
+    case 'email':
+      if (typeof data !== 'string') return null;
+      let email = data.split('@');
+      return sliceHelper(email[0], 2, 2) + `@${email[1]}`; // eg. un***pi@consultwithcase.com
+      break;
+    case 'password':
+      if (typeof data !== 'string') return null;
+      return sliceHelper(data, 1, 1); // eg. T***1
+      break;
+    case 'apikey':
+      if (typeof data !== 'string') return null;
+      return sliceHelper(data, 8, 8); // eg. eyJ0eXAi***wLQFeyjA
+      break;
+  }
+} // redact
+
+// |----------------------------------------------------|
+// |                                                    |
+// |                        EXPORT                      |
+// |                                                    |
+// |----------------------------------------------------|
 
 module.exports = {
   handler
