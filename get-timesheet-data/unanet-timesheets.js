@@ -29,16 +29,18 @@ const BILLABLE_CODES = [ "BILL_SVCS" ];
  *    - [x] pass this in the event to save the call
  * - [x] Add non-billables
  * - [x] Add check for event dates before summing timeslip
- * 
- * Today:
  * - [x] Support onlyPto flag
  * - [x] Make title according to passed in titles
  * - [x] Handle yearly calls correctly
  * - [x] How does the frontend react to a period's timesheets being `{}`?
  * - [x] Update frontend to warn that future PTO in Unanet is not included in the planner
+ * - [x] Handle Unanet going down vs code crashing
+ * 
+ * Today:
  * - [ ] Support multiple users? (efficiently)
  * 
  * Pending:
+ * - [ ] Rate limit handling
  * - [ ] Get PTO balances
  * - [ ] Will PTO include the current month? Need to update planner notif if so.
  */
@@ -56,16 +58,16 @@ async function handler(event) {
     
     // log in to Unanet
     accessToken = await getAccessToken();
-    unanetPersonKey ??= await getUnanetPersonKey(employeeNumber);
+    unanetPersonKey ??= await getUnanetPersonKey(employeeNumber); // TODO: test this
 
     // build the return body
     let body = { system: 'Unanet' };
     if (onlyPto) {
-      let { ptoBalances } = await getPtoBalances(personKey);
+      let { ptoBalances } = await getPtoBalances(unanetPersonKey);
       body.ptoBalances = ptoBalances;
     } else {
-      let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, personKey);
-      let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(personKey);
+      let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, unanetPersonKey);
+      let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(unanetPersonKey);
       let supplementalData = combineSupplementalData(timeSupp, ptoSupp);
       body = { ...body, timesheets, ptoBalances, supplementalData }
     }
@@ -73,16 +75,7 @@ async function handler(event) {
     // return everything together
     return Promise.resolve({ statusCode: 200, body });
   } catch (err) {
-    console.log(err);
-    return Promise.reject({
-      statusCode: 500,
-      body: {
-        stage: STAGE ?? null,
-        url: BASE_URL ?? null,
-        api_key: redact(accessToken, 8, 8),
-        err: serializeError(err)
-      }
-    });
+    return Promise.reject(await handleError(err));
   }
 } // handler
 
@@ -398,8 +391,50 @@ function serializeError(err) {
  * @param fill (optional) characters to fill in place of redacted data
  */
 function redact(str, start, end, fill='***') {
-    return str.slice(0, start) + fill + str.slice(-end);
+  if ([str, start, end, fill].some(v => v == null)) return null;
+  return str.slice(0, start) + fill + str.slice(-end);
 } // redact
+
+/**
+ * Builds an object to use in Promise rejections based on whether
+ * or not Unanet is down, or if it was the code that errored.
+ * 
+ * @param err Error object
+ * @returns object to use for Promise.reject()
+ */
+async function handleError(err){
+  // make sure the error function doesn't error
+  if (!err) err = new Error('Unknown error occurred.');
+
+  // body to return either way
+  let body = {
+    stage: STAGE ?? null,
+    url: BASE_URL ?? null,
+    api_key: redact(accessToken, 8, 8),
+    err: serializeError(err)
+  };
+
+  // return codes based on result of ping
+  let ping = await axios.get(BASE_URL + '/rest/ping');
+  if (ping?.status < 300 && ping?.status >= 200) {
+    // Unanet is up
+    console.log(err);
+    return {
+      status: 500,
+      message: err.message,
+      code: err.code,
+      body
+    };
+  } else {
+    // Unanet is down
+    return {
+      status: 503,
+      message: "Unanet API failed to respond.",
+      code: "ERR_UNANET_DOWN",
+      body
+    };
+  }
+} // handleError
 
 // |----------------------------------------------------|
 // |                                                    |
