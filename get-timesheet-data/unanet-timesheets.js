@@ -37,12 +37,14 @@ const BILLABLE_CODES = [ "BILL_SVCS" ];
  * - [x] Handle Unanet going down vs code crashing
  * 
  * Today:
- * - [ ] Support multiple users? (efficiently)
  * 
- * Pending:
- * - [ ] Rate limit handling
+ * Future:
+ * 
+ * Blocked:
  * - [ ] Get PTO balances
  * - [ ] Will PTO include the current month? Need to update planner notif if so.
+ * - [ ] Is there a more efficient way to do the calls - can I get jobcode data from the search
+ * - [ ] Rate limit handling (batches)? What is our rate limit
  */
 
 /**
@@ -273,6 +275,10 @@ async function getUnanetPersonKey(employeeNumber) {
 
   // update user's DynamoDB object and return for usage now
   await updateUserPersonKey(employeeNumber, personKey);
+  console.log(
+    'GETTING UANNET PERSON KEYYYYYYYYYYYYYYYYYYYYY',
+    personKey
+  )
   return personKey;
 } // getUnanetPersonKey
 
@@ -336,10 +342,12 @@ async function getFullTimesheets(timesheets) {
 function getProjectName(projectName) {
   // split up each part and remove any parts that are all digits
   let parts = projectName.split('.');
+
   // remove part if it's just numbers
   for (let i = 0; i < parts.length; i++)
     if (/^\d+$/g.test(parts[i]))
       parts.splice(i--, 1); // post-decrement keeps i correct after splice
+  
   // return leftover parts and remove any extra whitespace
   return parts.join(' ').replaceAll(/ +/g, ' ');
 } // getProjectName
