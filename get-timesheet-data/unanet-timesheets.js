@@ -8,6 +8,7 @@
 const axios = require('axios');
 const dateUtils = require('dateUtils'); // from shared lambda layer
 const { getSecret } = require('./secrets');
+const { getPtoCsv } = require('./unanet-pto-download');
 
 // DynamoDB import and setup
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
@@ -37,14 +38,13 @@ const BILLABLE_CODES = [ "BILL_SVCS" ];
  * - [x] Handle Unanet going down vs code crashing
  * 
  * Today:
+ * - [ ] Input validation
+ * - [ ] Get PTO balances using CSV
+ *    - [ ] Will PTO include the current month? Need to update planner notif if so.
  * 
  * Future:
- * 
- * Blocked:
- * - [ ] Get PTO balances
- * - [ ] Will PTO include the current month? Need to update planner notif if so.
- * - [ ] Is there a more efficient way to do the calls - can I get jobcode data from the search
  * - [ ] Rate limit handling (batches)? What is our rate limit
+ * 
  */
 
 /**
@@ -55,12 +55,15 @@ const BILLABLE_CODES = [ "BILL_SVCS" ];
  */
 async function handler(event) {
   try {
+
+    return await getPtoCsv({ suffix: URL_SUFFIX });
+
     // pull out vars from the event
     let { onlyPto, periods, unanetPersonKey, employeeNumber } = event;
     
     // log in to Unanet
     accessToken = await getAccessToken();
-    unanetPersonKey ??= await getUnanetPersonKey(employeeNumber); // TODO: test this
+    unanetPersonKey ??= await getUnanetPersonKey(employeeNumber);
 
     // build the return body
     let body = { system: 'Unanet' };

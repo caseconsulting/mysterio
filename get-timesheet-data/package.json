@@ -4,5 +4,9 @@
   "private": true,
   "description": "Retrieves timesheets data from TSheets API",
   "author": "Case Consulting",
-  "main": "app.js"
+  "main": "app.js",
+  "dependencies": {
+    "chrome-aws-lambda": "10.1.0",
+    "puppeteer-core": "10.1.0"
+  }
 }
