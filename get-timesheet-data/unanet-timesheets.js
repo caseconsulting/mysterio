@@ -1,6 +1,7 @@
 /**
  * 
  * Unanet Swagger API: https://consultwithcase-sand.unanet.biz/platform/swagger/
+ * Rate limit: 5000 calls per day
  * 
  */
 
@@ -8,7 +9,6 @@
 const axios = require('axios');
 const dateUtils = require('dateUtils'); // from shared lambda layer
 const { getSecret } = require('./secrets');
-const { getPtoCsv } = require('./unanet-pto-download');
 
 // DynamoDB import and setup
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
@@ -21,13 +21,15 @@ let accessToken;
 const STAGE = process.env.STAGE;
 const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
 const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
-const BILLABLE_CODES = [ "BILL_SVCS" ];
+const BILLABLE_CODES = ["BILL_SVCS"];
+
+let APICalls = 0;
 
 /**
  * Done:
  * - [x] Use getSecret to store login info
  * - [x] Store/retrieve PersonKey in/from Dynamo
- *    - [x] pass this in the event to save the call
+ * - [x] Pass personkey in the event to save an API call
  * - [x] Add non-billables
  * - [x] Add check for event dates before summing timeslip
  * - [x] Support onlyPto flag
@@ -36,14 +38,20 @@ const BILLABLE_CODES = [ "BILL_SVCS" ];
  * - [x] How does the frontend react to a period's timesheets being `{}`?
  * - [x] Update frontend to warn that future PTO in Unanet is not included in the planner
  * - [x] Handle Unanet going down vs code crashing
+ * - [x] Get PTO data from API
  * 
  * Today:
- * - [ ] Input validation
  * - [ ] Get PTO balances using CSV
- *    - [ ] Will PTO include the current month? Need to update planner notif if so.
+ *    - [ ] upload report in front end
+ *    - [ ] download report in lambda
+ *    - [ ] get date of front-end upload
+ *    - [ ] math through timesheets and upload to show correct balance
+ *    - [ ] come up with consistent method for them to know when to upload
  * 
  * Future:
- * - [ ] Rate limit handling (batches)? What is our rate limit
+ * - [ ] Warehouse API data from previous months (only get 2 months via API)
+ * - [ ] Make efficient calls for multiple users (will be doing entire company at some point)
+ * - [ ] Input validation
  * 
  */
 
@@ -55,9 +63,6 @@ const BILLABLE_CODES = [ "BILL_SVCS" ];
  */
 async function handler(event) {
   try {
-
-    return await getPtoCsv({ suffix: URL_SUFFIX });
-
     // pull out vars from the event
     let { onlyPto, periods, unanetPersonKey, employeeNumber } = event;
     
@@ -78,7 +83,7 @@ async function handler(event) {
     }
 
     // return everything together
-    return Promise.resolve({ statusCode: 200, body });
+    return Promise.resolve({ statusCode: 200, APICalls, body });
   } catch (err) {
     return Promise.reject(await handleError(err));
   }
@@ -249,6 +254,7 @@ async function getAccessToken() {
 
   // request and return token from Unanet API
   let resp = await axios(options);
+  APICalls++;
   return resp.data.token;
 } // getAccessToken
 
@@ -271,6 +277,7 @@ async function getUnanetPersonKey(employeeNumber) {
 
   // request data from Unanet API
   let resp = await axios(options);
+  APICalls++;
 
   // pull out the employee's key
   if (resp.data?.items?.length !== 1) throw new Error(`Could not distinguish Unanet employee ${employeeNumber} (${resp.data.length} options).`);
@@ -278,10 +285,6 @@ async function getUnanetPersonKey(employeeNumber) {
 
   // update user's DynamoDB object and return for usage now
   await updateUserPersonKey(employeeNumber, personKey);
-  console.log(
-    'GETTING UANNET PERSON KEYYYYYYYYYYYYYYYYYYYYY',
-    personKey
-  )
   return personKey;
 } // getUnanetPersonKey
 
@@ -308,6 +311,7 @@ async function getRawTimesheets(startDate, endDate, userId) {
 
   // get response and just return it
   let resp = await axios(options);
+  APICalls++;
   return resp.data.items;
 } // getRawTimesheets
 
@@ -323,6 +327,7 @@ async function getFullTimesheets(timesheets) {
   let headers = { Authorization: `Bearer ${accessToken}` };
   for (let timesheet of timesheets) promises.push(axios.get(BASE_URL + `/rest/time/${timesheet.key}`, { headers }));
   let resp = await Promise.all(promises);
+  APICalls += promises.length;
 
   // pull out response data and return it all together
   let filledTimesheets = resp.map(res => res.data);
@@ -351,8 +356,8 @@ function getProjectName(projectName) {
     if (/^\d+$/g.test(parts[i]))
       parts.splice(i--, 1); // post-decrement keeps i correct after splice
   
-  // return leftover parts and remove any extra whitespace
-  return parts.join(' ').replaceAll(/ +/g, ' ');
+  // return leftover parts and remove any extra whitespace/underscores
+  return parts.join(' ').replaceAll(/[ +_*]/g, ' ');
 } // getProjectName
 
 /**

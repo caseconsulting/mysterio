@@ -2,11 +2,7 @@
   "name": "get-timesheet-data",
   "version": "1.0.0",
   "private": true,
-  "description": "Retrieves timesheets data from TSheets API",
+  "description": "Retrieves timesheets data from timesheet system APIs",
   "author": "Case Consulting",
-  "main": "app.js",
-  "dependencies": {
-    "chrome-aws-lambda": "10.1.0",
-    "puppeteer-core": "10.1.0"
-  }
+  "main": "app.js"
 }
