@@ -180,8 +180,8 @@ Resources:
                 - s3:GetObject
                 - s3:ListBucket
               Resource:
-                - arn:aws:s3:${AWS::Region}:${AWS::AccountId}:case-expense-app-unanet-data-${Stage}
-                - arn:aws:s3:${AWS::Region}:${AWS::AccountId}:case-expense-app-unanet-data-${Stage}/*
+                - !Sub arn:aws:s3:::case-expense-app-unanet-data-${Stage}
+                - !Sub arn:aws:s3:::case-expense-app-unanet-data-${Stage}/*
         - Statement:
             - Action:
                 - dynamodb:Scan

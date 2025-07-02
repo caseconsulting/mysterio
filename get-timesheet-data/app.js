@@ -53,7 +53,7 @@ async function handler(event) {
         stage: STAGE ?? 'undefined',
         is_prod: IS_PROD ?? 'undefined',
         url: BASE_URL ?? 'undefined',
-        login: { user: redact(LOGIN.username, 'email'), pass: redact(LOGIN.password, 'password') },
+        // login: { user: redact(LOGIN.username, 'email'), pass: redact(LOGIN.password, 'password') },
         api_key: redact(accessToken, 'apikey'),
         err: err ?? 'undefined'
       }

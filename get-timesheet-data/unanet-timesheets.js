@@ -9,6 +9,7 @@
 const axios = require('axios');
 const dateUtils = require('dateUtils'); // from shared lambda layer
 const { getSecret } = require('./secrets');
+const Papa = require('papaparse');
 
 // global and stage-based vars
 let accessToken;
@@ -43,23 +44,21 @@ const ACCRUALS_KEY = 'accruals.csv'
  * - [x] Update frontend to warn that future PTO in Unanet is not included in the planner
  * - [x] Handle Unanet going down vs code crashing
  * - [x] Get PTO data from API
+ * - [x] Get PTO accruals data from uploaded CSV
  * 
- * Today:
- * - [ ] Get PTO balances using CSV
- *    - [x] upload report in front end
- *    - [ ] load report in lambda
- *    - [ ] get date of front-end upload
- *    - [ ] math through timesheets and upload to show correct balance
- *    - [ ] come up with consistent method for them to know when to upload
- * 
- * Future:
- * - [ ] Warehouse API data from previous months (only get 2 months via API)
+ * Important to finish:
+ * - [ ] Calculate actual PTO accrual based on CSV upload date, timesheets, and CSV accrual amount
  * - [ ] Make efficient calls for multiple users (will be doing entire company at some point)
+ * 
+ * Would be good to finish:
+ * - [ ] Warehouse API data from previous months (only get 2 months via API)
  * - [ ] Input validation
  * 
- * Pre-production:
- * - [ ] *** Check that URLs and such are correct for production ***
- * 
+ * Pre- production deployment:
+ * - [ ] Come up with consistent method for admins to know when to upload (maybe just every payroll)
+ * - [ ] Check that URLs and such are correct for production
+ *    - [ ] Frontend "Open Unanet" button
+ *    - [ ] BASE_URL in this code
  */
 
 /**
@@ -71,23 +70,17 @@ const ACCRUALS_KEY = 'accruals.csv'
 async function handler(event) {
   try {
     // pull out vars from the event
-    let { onlyPto, periods, unanetPersonKey, employeeNumber } = event;
+    let { periods, employeeNumber, unanetPersonKey } = event;
     
     // log in to Unanet
     accessToken = await getAccessToken();
     unanetPersonKey ??= await getUnanetPersonKey(employeeNumber);
 
     // build the return body
-    let body = { system: 'Unanet' };
-    if (onlyPto) {
-      let { ptoBalances } = await getPtoBalances(unanetPersonKey);
-      body.ptoBalances = ptoBalances;
-    } else {
-      let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, unanetPersonKey);
-      let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(unanetPersonKey);
-      let supplementalData = combineSupplementalData(timeSupp, ptoSupp);
-      body = { ...body, timesheets, ptoBalances, supplementalData }
-    }
+    let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, unanetPersonKey);
+    let { ptoBalances, supplementalData: ptoSupp,  } = await getPtoBalances(unanetPersonKey, employeeNumber, timesheets);
+    let supplementalData = combineSupplementalData(timeSupp, ptoSupp);
+    body = { system: 'Unanet', timesheets, ptoBalances, supplementalData };
 
     // return everything together
     return Promise.resolve({ statusCode: 200, body });
@@ -188,10 +181,12 @@ async function getTimesheet(startDate, endDate, title, userId) {
 /**
  * Gets a user's PTO balances
  * 
- * @param userId Unanet ID of user
+ * @param unanetId Unanet ID of user
+ * @param portalNumber employeeNumber from portal
+ * @param timesheets user's timesheets
  * @return PTO balances and maybe supplemental data
  */ 
-async function getPtoBalances(userId) {
+async function getPtoBalances(unanetId, portalNumber, timesheets) {
   // accruals data to fill
   let accruals;
   let accrualsUpdated;
@@ -202,40 +197,57 @@ async function getPtoBalances(userId) {
     Bucket: ACCRUALS_BUCKET,
     Key: ACCRUALS_KEY,
   };
-
-  // get file data
-  const objCommand = new GetObjectCommand(params);
-  await getSignedUrl(s3Client, objCommand, { expiresIn: 60 })
-    .then((urlData) => { accruals = urlData; })
-    .catch((err) => { throw new Error (err.message); });
   
   // get file metadata
   const headCommand = new HeadObjectCommand(params);
   await s3Client
     .send(headCommand)
     .then(async (headObjectData) => { accrualsUpdated = headObjectData.LastModified })
-    .catch((err) => {
-      console.log(JSON.stringify(err.message));
-      throw new Error(err.message);
-    });
+    .catch((err) => { throw new Error(err.message) });
+  accrualsUpdated = dateUtils.subtract(accrualsUpdated, 4, 'h');
 
-  console.log(accruals);
-  console.log(accrualsUpdated);
+  // get file data
+  let accrualsUrl;
+  const objCommand = new GetObjectCommand(params);
+  await getSignedUrl(s3Client, objCommand, { expiresIn: 60 })
+    .then((urlData) => { accrualsUrl = urlData; })
+    .catch((err) => { throw new Error (err.message) });
+  accruals = await axios.get(accrualsUrl);
+  accruals = Papa.parse(accruals.data, { header: true });
+  accruals = accruals.data;
 
-  // TODO: process data
+  // get current employee's email
+  // TODO: remove if the report contains their Portal or Unanet number (I asked Katie C. to try to add it)
+  const scanCommand = new ScanCommand({
+    ProjectionExpression: 'email',
+    ExpressionAttributeValues: { ':n': Number(portalNumber) },
+    FilterExpression: 'employeeNumber = :n',
+    TableName: `${STAGE}-employees`
+  });
+  resp = await docClient.send(scanCommand);
+  if (resp.Count !== 1) throw new Error(`Could not get Portal employee'e email (employee # ${portalNumber}) (${resp.Count} options).`);
+  const employeeEmail = resp.Items[0].email;
 
-  return {
-    ptoBalances: {
-      "Holiday": 0,
-      "Training": 0,
-      "PTO": 0,
-      "Jury Duty": 0,
-      "Maternity/Paternity Time Off": 0,
-      "Bereavement": 0
-    },
-    supplementalData: {},
-    accrualsUpdated
-  };
+  // TODO: update this to file format (include )
+  const ACCRUAL_HEADERS = new Set([]); // eg. "HOLIDAY"
+  let hoursToSeconds = (hours) => hours * 60 * 60;
+  let ptoBalances = {};
+  for (let row of accruals) {
+    // skip other employees
+    // TODO: edit this line to whatever matching technique to check if it's the current employee
+    if (!row['Person'].includes(employeeEmail)) continue;
+
+    // pull out all PTO accuals
+    for (let header in row) {
+      if (!ACCRUAL_HEADERS.has(header) || isNaN(row[header])) continue;
+      ptoBalances[header] = Number(row[header]);
+    }
+
+    // skip other employees
+    break;
+  }
+
+  return { ptoBalances };
 } // getPtoBalances
 
 /**
