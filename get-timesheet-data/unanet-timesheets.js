@@ -5,16 +5,10 @@
  * 
  */
 
-// util imports
+// utils
 const axios = require('axios');
 const dateUtils = require('dateUtils'); // from shared lambda layer
 const { getSecret } = require('./secrets');
-
-// DynamoDB import and setup
-const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
-const dbClient = new DynamoDBClient({});
-const docClient = DynamoDBDocumentClient.from(dbClient);
 
 // global and stage-based vars
 let accessToken;
@@ -23,7 +17,17 @@ const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
 const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
 const BILLABLE_CODES = ["BILL_SVCS"];
 
-let APICalls = 0;
+// DynamoDB
+const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBDocumentClient, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const dbClient = new DynamoDBClient({});
+const docClient = DynamoDBDocumentClient.from(dbClient);
+
+// S3
+const { S3Client, HeadObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const ACCRUALS_BUCKET = `case-expense-app-unanet-data-${STAGE}`;
+const ACCRUALS_KEY = 'accruals.csv'
 
 /**
  * Done:
@@ -42,8 +46,8 @@ let APICalls = 0;
  * 
  * Today:
  * - [ ] Get PTO balances using CSV
- *    - [ ] upload report in front end
- *    - [ ] download report in lambda
+ *    - [x] upload report in front end
+ *    - [ ] load report in lambda
  *    - [ ] get date of front-end upload
  *    - [ ] math through timesheets and upload to show correct balance
  *    - [ ] come up with consistent method for them to know when to upload
@@ -52,6 +56,9 @@ let APICalls = 0;
  * - [ ] Warehouse API data from previous months (only get 2 months via API)
  * - [ ] Make efficient calls for multiple users (will be doing entire company at some point)
  * - [ ] Input validation
+ * 
+ * Pre-production:
+ * - [ ] *** Check that URLs and such are correct for production ***
  * 
  */
 
@@ -83,7 +90,7 @@ async function handler(event) {
     }
 
     // return everything together
-    return Promise.resolve({ statusCode: 200, APICalls, body });
+    return Promise.resolve({ statusCode: 200, body });
   } catch (err) {
     return Promise.reject(await handleError(err));
   }
@@ -185,6 +192,38 @@ async function getTimesheet(startDate, endDate, title, userId) {
  * @return PTO balances and maybe supplemental data
  */ 
 async function getPtoBalances(userId) {
+  // accruals data to fill
+  let accruals;
+  let accrualsUpdated;
+
+  // build command to send S3
+  const s3Client = new S3Client({});
+  const params = {
+    Bucket: ACCRUALS_BUCKET,
+    Key: ACCRUALS_KEY,
+  };
+
+  // get file data
+  const objCommand = new GetObjectCommand(params);
+  await getSignedUrl(s3Client, objCommand, { expiresIn: 60 })
+    .then((urlData) => { accruals = urlData; })
+    .catch((err) => { throw new Error (err.message); });
+  
+  // get file metadata
+  const headCommand = new HeadObjectCommand(params);
+  await s3Client
+    .send(headCommand)
+    .then(async (headObjectData) => { accrualsUpdated = headObjectData.LastModified })
+    .catch((err) => {
+      console.log(JSON.stringify(err.message));
+      throw new Error(err.message);
+    });
+
+  console.log(accruals);
+  console.log(accrualsUpdated);
+
+  // TODO: process data
+
   return {
     ptoBalances: {
       "Holiday": 0,
@@ -194,7 +233,8 @@ async function getPtoBalances(userId) {
       "Maternity/Paternity Time Off": 0,
       "Bereavement": 0
     },
-    supplementalData: {}
+    supplementalData: {},
+    accrualsUpdated
   };
 } // getPtoBalances
 
@@ -254,7 +294,6 @@ async function getAccessToken() {
 
   // request and return token from Unanet API
   let resp = await axios(options);
-  APICalls++;
   return resp.data.token;
 } // getAccessToken
 
@@ -277,7 +316,6 @@ async function getUnanetPersonKey(employeeNumber) {
 
   // request data from Unanet API
   let resp = await axios(options);
-  APICalls++;
 
   // pull out the employee's key
   if (resp.data?.items?.length !== 1) throw new Error(`Could not distinguish Unanet employee ${employeeNumber} (${resp.data.length} options).`);
@@ -311,7 +349,6 @@ async function getRawTimesheets(startDate, endDate, userId) {
 
   // get response and just return it
   let resp = await axios(options);
-  APICalls++;
   return resp.data.items;
 } // getRawTimesheets
 
@@ -327,7 +364,6 @@ async function getFullTimesheets(timesheets) {
   let headers = { Authorization: `Bearer ${accessToken}` };
   for (let timesheet of timesheets) promises.push(axios.get(BASE_URL + `/rest/time/${timesheet.key}`, { headers }));
   let resp = await Promise.all(promises);
-  APICalls += promises.length;
 
   // pull out response data and return it all together
   let filledTimesheets = resp.map(res => res.data);
