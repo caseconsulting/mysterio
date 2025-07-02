@@ -175,6 +175,14 @@ Resources:
       Timeout: 30
       Policies:
         - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:ListBucket
+              Resource:
+                - arn:aws:s3:${AWS::Region}:${AWS::AccountId}:case-expense-app-unanet-data-${Stage}
+                - arn:aws:s3:${AWS::Region}:${AWS::AccountId}:case-expense-app-unanet-data-${Stage}/*
+        - Statement:
             - Action:
                 - dynamodb:Scan
                 - dynamodb:Query
