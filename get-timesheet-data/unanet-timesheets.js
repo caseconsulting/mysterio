@@ -31,6 +31,19 @@ const ACCRUALS_BUCKET = `case-expense-app-unanet-data-${STAGE}`;
 const ACCRUALS_KEY = 'accruals.csv'
 
 /**
+ * 
+ * #####
+ * 
+ *                       TO WHOEVER IS WORKING ON THIS
+ * The best way to disect what is goign on is to read my comments, especially in the API connections section.
+ * You can also run the API calls and just return/log the results to see how they are structured.
+ * The main problem right now is that the PTO CSV upload (from `getAccruals()`) is only "as of" the date it was submitted
+ * (which is returned by `getAccruals()` too). So the PTO Balances being returned need to take that balance and subract anything
+ * that has been added to the timesheets since then. Shouldn't be too hard conceptually but I just couldn't get to it.
+ * I hope you find things well documented. Ping Paul if you have any questions, he's understands what's going on conceptually and what's needed.
+ * 
+ * #####
+ * 
  * Done:
  * - [x] Use getSecret to store login info
  * - [x] Store/retrieve PersonKey in/from Dynamo
@@ -47,11 +60,12 @@ const ACCRUALS_KEY = 'accruals.csv'
  * - [x] Get PTO accruals data from uploaded CSV
  * 
  * Important to finish:
- * - [ ] Calculate actual PTO accrual based on CSV upload date, timesheets, and CSV accrual amount
- * - [ ] Make efficient calls for multiple users (will be doing entire company at some point)
+ * - [ ] Calculate actual PTO accrual based on CSV accrual, CSV upload date, and timesheets
+ * - [ ] Resolve any comments starting with "// TODO:"
  * 
  * Would be good to finish:
- * - [ ] Warehouse API data from previous months (only get 2 months via API)
+ * - [ ] Warehouse API data from previous months (only get the last 2 months via API)
+ * - [ ] Make efficient calls for multiple users (will be doing entire company at some point)
  * - [ ] Input validation
  * 
  * Pre- production deployment:
@@ -77,8 +91,10 @@ async function handler(event) {
     unanetPersonKey ??= await getUnanetPersonKey(employeeNumber);
 
     // build the return body
+    // TODO: subtract PTO hours from PTO Balances if it was submitted after the Unanet CSV upload
+    // caveat: you have to use timeslips from `getTimesheet` to do this, and then edit ptoBalances
+    let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(employeeNumber);
     let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, unanetPersonKey);
-    let { ptoBalances, supplementalData: ptoSupp,  } = await getPtoBalances(unanetPersonKey, employeeNumber, timesheets);
     let supplementalData = combineSupplementalData(timeSupp, ptoSupp);
     body = { system: 'Unanet', timesheets, ptoBalances, supplementalData };
 
@@ -186,11 +202,75 @@ async function getTimesheet(startDate, endDate, title, userId) {
  * @param timesheets user's timesheets
  * @return PTO balances and maybe supplemental data
  */ 
-async function getPtoBalances(unanetId, portalNumber, timesheets) {
+async function getPtoBalances(portalNumber) {
   // accruals data to fill
-  let accruals;
-  let accrualsUpdated;
+  let { accruals, accrualsUpdated } = await getAccruals();
 
+  // get current employee's email
+  // TODO: remove if the report contains their Portal or Unanet number (I asked Katie C. to try to add it)
+  const { email: employeeEmail } = await getEmployeeAttrFromDb(portalNumber, 'email');
+
+  // TODO: update this to file format (include )
+  const ACCRUAL_HEADERS = new Set([]); // eg. "HOLIDAY"
+  let hoursToSeconds = (hours) => hours * 60 * 60;
+  let ptoBalances = {};
+  for (let row of accruals) {
+    // skip other employees
+    // TODO: edit this line to whatever matching technique to check if it's the current employee
+    if (!row['Person'].includes(employeeEmail)) continue;
+
+    // pull out all PTO accuals
+  for (let header in row) {
+      if (!ACCRUAL_HEADERS.has(header) || isNaN(row[header])) continue;
+      ptoBalances[header] = Number(row[header]);
+    }
+
+    // skip other employees
+  break;
+  }
+
+  return { ptoBalances, supplementalData: { accrualsUpdated } };
+} // getPtoBalances
+
+// |----------------------------------------------------|
+// |                                                    |
+// |                  AWS CONNECTIONS                   |
+// |                                                    |
+// |----------------------------------------------------|
+
+/**
+ * Gets a specific employee attribute from the database
+ * Usage eg: const { id, email } = await getEmployeeAttrFromDb(10001, 'id', 'email');
+ * 
+ * @param employeeNumber employee to retrieve data for
+ * @param attrs attributes to fetch
+ * @return object ready for destructuring
+ */
+async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
+  // build command
+  const TableName = `${STAGE}-employees`;
+  const scanCommand = new ScanCommand({
+    ProjectionExpression: attrs.join(','),
+    FilterExpression: 'employeeNumber = :n',
+    ExpressionAttributeValues: { ':n': Number(employeeNumber) },
+    TableName
+  });
+
+  // send command
+  resp = await docClient.send(scanCommand);
+
+  // throw error or return object
+  if (resp.Count !== 1) throw new Error(`Could not distinguish Portal employee ${employeeNumber} (${resp.Count} options).`);
+  return resp.Items[0];
+} // getEmployeeAttrFromDb
+
+/**
+ * Returns the Unanet Accruals information as a JSON object (parsed from csv),
+ * along with the date it was last updated.
+ * 
+ * @returns Object - { accruals, accrualsUpdated }
+ */
+async function getAccruals() {
   // build command to send S3
   const s3Client = new S3Client({});
   const params = {
@@ -216,39 +296,8 @@ async function getPtoBalances(unanetId, portalNumber, timesheets) {
   accruals = Papa.parse(accruals.data, { header: true });
   accruals = accruals.data;
 
-  // get current employee's email
-  // TODO: remove if the report contains their Portal or Unanet number (I asked Katie C. to try to add it)
-  const scanCommand = new ScanCommand({
-    ProjectionExpression: 'email',
-    ExpressionAttributeValues: { ':n': Number(portalNumber) },
-    FilterExpression: 'employeeNumber = :n',
-    TableName: `${STAGE}-employees`
-  });
-  resp = await docClient.send(scanCommand);
-  if (resp.Count !== 1) throw new Error(`Could not get Portal employee'e email (employee # ${portalNumber}) (${resp.Count} options).`);
-  const employeeEmail = resp.Items[0].email;
-
-  // TODO: update this to file format (include )
-  const ACCRUAL_HEADERS = new Set([]); // eg. "HOLIDAY"
-  let hoursToSeconds = (hours) => hours * 60 * 60;
-  let ptoBalances = {};
-  for (let row of accruals) {
-    // skip other employees
-    // TODO: edit this line to whatever matching technique to check if it's the current employee
-    if (!row['Person'].includes(employeeEmail)) continue;
-
-    // pull out all PTO accuals
-    for (let header in row) {
-      if (!ACCRUAL_HEADERS.has(header) || isNaN(row[header])) continue;
-      ptoBalances[header] = Number(row[header]);
-    }
-
-    // skip other employees
-    break;
-  }
-
-  return { ptoBalances };
-} // getPtoBalances
+  return { accruals, accrualsUpdated };
+} // getAccruals
 
 /**
  * Updates a user's personKey in DynamoDB for future use
@@ -261,15 +310,7 @@ async function updateUserPersonKey(employeeNumber, personKey) {
   const TableName = `${STAGE}-employees`;
 
   // find the user's ID
-  const scanCommand = new ScanCommand({
-    ProjectionExpression: 'id',
-    ExpressionAttributeValues: { ':n': Number(employeeNumber) },
-    FilterExpression: 'employeeNumber = :n',
-    TableName
-  });
-  resp = await docClient.send(scanCommand);
-  if (resp.Count !== 1) throw new Error(`Could not distinguish Portal employee ${employeeNumber} (${resp.Count} options).`);
-  const id = resp.Items[0].id;
+  const { id } = await getEmployeeAttrFromDb(employeeNumber, 'id');
 
   // use their ID to update the personKey
   const updateCommand = new UpdateCommand({ 
@@ -468,7 +509,7 @@ function redact(str, start, end, fill='***') {
  */
 async function handleError(err){
   // make sure the error function doesn't error
-  if (!err) err = new Error('Unknown error occurred.');
+  err ??= new Error('Unknown error occurred.');
 
   // body to return either way
   let body = {
