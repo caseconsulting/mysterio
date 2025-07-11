@@ -1,8 +1,14 @@
 /**
- * 
+ *
  * Unanet Swagger API: https://consultwithcase-sand.unanet.biz/platform/swagger/
  * Rate limit: 5000 calls per day
- * 
+ *
+ */
+
+// types
+/**
+ * @typedef {{ startDate: Date, endDate: Date, title: string, timesheets: { [jobCode: string]: number; } }} Timesheet
+ * @typedef {{ today: number, future: { days: number, duration: number }, nonBillables: string[] }} Supplement
  */
 
 // utils
@@ -10,13 +16,15 @@ const axios = require('axios');
 const dateUtils = require('dateUtils'); // from shared lambda layer
 const { getSecret } = require('./secrets');
 const Papa = require('papaparse');
+const hoursToSeconds = (hours) => hours * 60 * 60;
 
 // global and stage-based vars
+/** @type string */
 let accessToken;
 const STAGE = process.env.STAGE;
 const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
 const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
-const BILLABLE_CODES = ["BILL_SVCS"];
+const BILLABLE_CODES = ['BILL_SVCS'];
 
 // DynamoDB
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
@@ -28,12 +36,12 @@ const docClient = DynamoDBDocumentClient.from(dbClient);
 const { S3Client, HeadObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const ACCRUALS_BUCKET = `case-expense-app-unanet-data-${STAGE}`;
-const ACCRUALS_KEY = 'accruals.csv'
+const ACCRUALS_KEY = 'accruals.csv';
 
 /**
- * 
+ *
  * #####
- * 
+ *
  *                       TO WHOEVER IS WORKING ON THIS
  * The best way to disect what is goign on is to read my comments, especially in the API connections section.
  * You can also run the API calls and just return/log the results to see how they are structured.
@@ -41,9 +49,9 @@ const ACCRUALS_KEY = 'accruals.csv'
  * (which is returned by `getAccruals()` too). So the PTO Balances being returned need to take that balance and subract anything
  * that has been added to the timesheets since then. Shouldn't be too hard conceptually but I just couldn't get to it.
  * I hope you find things well documented. Ping Paul if you have any questions, he's understands what's going on conceptually and what's needed.
- * 
+ *
  * #####
- * 
+ *
  * Done:
  * - [x] Use getSecret to store login info
  * - [x] Store/retrieve PersonKey in/from Dynamo
@@ -58,16 +66,16 @@ const ACCRUALS_KEY = 'accruals.csv'
  * - [x] Handle Unanet going down vs code crashing
  * - [x] Get PTO data from API
  * - [x] Get PTO accruals data from uploaded CSV
- * 
+ *
  * Important to finish:
  * - [ ] Calculate actual PTO accrual based on CSV accrual, CSV upload date, and timesheets
- * - [ ] Resolve any comments starting with "// TODO:"
- * 
+ * - [ ] Resolve todo's
+ *
  * Would be good to finish:
  * - [ ] Warehouse API data from previous months (only get the last 2 months via API)
  * - [ ] Make efficient calls for multiple users (will be doing entire company at some point)
  * - [ ] Input validation
- * 
+ *
  * Pre- production deployment:
  * - [ ] Come up with consistent method for admins to know when to upload (maybe just every payroll)
  * - [ ] Check that URLs and such are correct for production
@@ -85,16 +93,34 @@ async function handler(event) {
   try {
     // pull out vars from the event
     let { periods, employeeNumber, unanetPersonKey } = event;
-    
+
     // log in to Unanet
     accessToken = await getAccessToken();
     unanetPersonKey ??= await getUnanetPersonKey(employeeNumber);
 
     // build the return body
+    let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, unanetPersonKey);
+    let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(employeeNumber);
+
     // TODO: subtract PTO hours from PTO Balances if it was submitted after the Unanet CSV upload
     // caveat: you have to use timeslips from `getTimesheet` to do this, and then edit ptoBalances
-    let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(employeeNumber);
-    let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, unanetPersonKey);
+
+    // This code may or may not be a working solution to that:
+    // // Assuming the report was uploaded before the end of the workday, this date doesn't include the up to date pto info.
+    // // i.e. ptoBalances is up to and not including this date
+    // const cutoffDate = ptoSupp.accrualsUpdated;
+
+    // const today = new Date();
+    // // destructure newTimesheets from nested object
+    // const {
+    //   timesheet: { timesheets: newTimesheets }
+    // } = await getTimesheet(cutoffDate, today, dateUtils.format(today, null, 'MMMM'), unanetPersonKey);
+
+    // // subtract new time for job code from pto balance retrieved from csv file
+    // for (const [jobCode, seconds] of Object.entries(newTimesheets)) {
+    //   ptoBalances[jobCode] -= seconds;
+    // }
+
     let supplementalData = combineSupplementalData(timeSupp, ptoSupp);
     body = { system: 'Unanet', timesheets, ptoBalances, supplementalData };
 
@@ -107,10 +133,10 @@ async function handler(event) {
 
 /**
  * Gets timesheet data for a given array of periods and a Unanet user
- * 
+ *
  * @param periods array of periods to get data for
  * @param userId Unanet key of user to get data for
- * @returns timesheets and supplemental data for all periods
+ * @returns {Promise<{ timesheets: Timesheet[], supplementalData: Supplement[] }>} timesheets and supplemental data for all periods
  */
 async function getPeriodTimesheets(periods, userId) {
   // get timesheets and data for all periods
@@ -130,12 +156,12 @@ async function getPeriodTimesheets(periods, userId) {
 
 /**
  * Creates a timesheet object for a given period
- * 
- * @param startDate Start date (inclusive) of timesheet data
- * @param endDate End date (inclusive) of timesheet data
- * @param title title of the timesheet
- * @param userId Unanet ID of user
- * @returns timesheet object between start and end dates
+ *
+ * @param {Date} startDate Start date (inclusive) of timesheet data
+ * @param {Date} endDate End date (inclusive) of timesheet data
+ * @param {string} title title of the timesheet
+ * @param {string} userId Unanet ID of user
+ * @returns {Promise<{timesheet: Timesheet, supplementalData: Supplement}>} timesheet object between start and end dates
  */
 async function getTimesheet(startDate, endDate, title, userId) {
   // get data from Unanet
@@ -146,12 +172,15 @@ async function getTimesheet(startDate, endDate, title, userId) {
   let today = dateUtils.getTodaysDate();
   let isToday = (date) => dateUtils.isSame(date, today, 'day');
   let isFuture = (date) => dateUtils.isAfter(date, today, 'day');
-  let hoursToSeconds = (hours) => hours * 60 * 60;
 
   // vars to fill in
+  /** @type Supplement */
   let supplementalData = {};
+  /** @type Set<string> */
   let nonBillables = new Set();
-  let timesheet = { startDate, endDate, title, timesheets: {} }
+
+  /** @type Timesheet */
+  let timesheet = { startDate, endDate, title, timesheets: {} };
 
   // loop through each month returned from Unanet API
   for (let month of filledTimesheets) {
@@ -196,38 +225,32 @@ async function getTimesheet(startDate, endDate, title, userId) {
 
 /**
  * Gets a user's PTO balances
- * 
+ *
  * @param unanetId Unanet ID of user
  * @param portalNumber employeeNumber from portal
  * @param timesheets user's timesheets
- * @return PTO balances and maybe supplemental data
- */ 
+ * @return {Promise<{ ptoBalances: { [ptoType: string]: number; }, supplementalData: { accrualsUpdated: Date } }>} PTO balances and maybe supplemental data
+ */
 async function getPtoBalances(portalNumber) {
   // accruals data to fill
   let { accruals, accrualsUpdated } = await getAccruals();
 
-  // get current employee's email
-  // TODO: remove if the report contains their Portal or Unanet number (I asked Katie C. to try to add it)
-  const { email: employeeEmail } = await getEmployeeAttrFromDb(portalNumber, 'email');
+  // get current employee's portal number
+  const { employeeNumber } = await getEmployeeAttrFromDb(portalNumber, 'employeeNumber');
 
-  // TODO: update this to file format (include )
-  const ACCRUAL_HEADERS = new Set([]); // eg. "HOLIDAY"
-  let hoursToSeconds = (hours) => hours * 60 * 60;
+  // const ACCRUAL_HEADERS = new Set(['CASE_CARES', 'HOLIDAY', 'PTO']);
   let ptoBalances = {};
-  for (let row of accruals) {
-    // skip other employees
-    // TODO: edit this line to whatever matching technique to check if it's the current employee
-    if (!row['Person'].includes(employeeEmail)) continue;
 
-    // pull out all PTO accuals
-  for (let header in row) {
-      if (!ACCRUAL_HEADERS.has(header) || isNaN(row[header])) continue;
-      ptoBalances[header] = Number(row[header]);
-    }
+  // values are the csv column names
+  const columns = {
+    name: 'Name',
+    number: 'Employee Number',
+    pto: 'Period Hours Available'
+  };
 
-    // skip other employees
-  break;
-  }
+  const empAccrual = accruals.find((row) => row[columns.number] === employeeNumber);
+  // TODO: other types of pto might be supported in the future. Iterate through `ACCRUAL_HEADERS` and pull out the data like below
+  ptoBalances['PTO'] = hoursToSeconds(empAccrual[columns.pto]);
 
   return { ptoBalances, supplementalData: { accrualsUpdated } };
 } // getPtoBalances
@@ -241,10 +264,11 @@ async function getPtoBalances(portalNumber) {
 /**
  * Gets a specific employee attribute from the database
  * Usage eg: const { id, email } = await getEmployeeAttrFromDb(10001, 'id', 'email');
- * 
- * @param employeeNumber employee to retrieve data for
- * @param attrs attributes to fetch
- * @return object ready for destructuring
+ *
+ * @template {string[]} T
+ * @param {number} employeeNumber employee to retrieve data for
+ * @param {T} attrs attributes to fetch
+ * @return {Promise<{ [K in T[number]]: any }>} An object with keys matching attrs
  */
 async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
   // build command
@@ -260,50 +284,70 @@ async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
   resp = await docClient.send(scanCommand);
 
   // throw error or return object
-  if (resp.Count !== 1) throw new Error(`Could not distinguish Portal employee ${employeeNumber} (${resp.Count} options).`);
+  if (resp.Count !== 1)
+    throw new Error(`Could not distinguish Portal employee ${employeeNumber} (${resp.Count} options).`);
   return resp.Items[0];
 } // getEmployeeAttrFromDb
 
 /**
  * Returns the Unanet Accruals information as a JSON object (parsed from csv),
  * along with the date it was last updated.
- * 
- * @returns Object - { accruals, accrualsUpdated }
+ *
+ * @returns {Promise<{ accruals: any[], columns: string[], accrualsUpdated: Date }>}
+ *          - accruals - the csv rows
+ *          - columns - the names of the csv columns, in order
+ *          - accrualsUpdated - the date the csv file was uploaded
  */
 async function getAccruals() {
   // build command to send S3
   const s3Client = new S3Client({});
   const params = {
     Bucket: ACCRUALS_BUCKET,
-    Key: ACCRUALS_KEY,
+    Key: ACCRUALS_KEY
   };
-  
+
   // get file metadata
   const headCommand = new HeadObjectCommand(params);
   await s3Client
     .send(headCommand)
-    .then(async (headObjectData) => { accrualsUpdated = headObjectData.LastModified })
-    .catch((err) => { throw new Error(err.message) });
+    .then(async (headObjectData) => {
+      accrualsUpdated = headObjectData.LastModified;
+    })
+    .catch((err) => {
+      throw new Error(err.message);
+    });
   accrualsUpdated = dateUtils.subtract(accrualsUpdated, 4, 'h');
 
   // get file data
   let accrualsUrl;
   const objCommand = new GetObjectCommand(params);
   await getSignedUrl(s3Client, objCommand, { expiresIn: 60 })
-    .then((urlData) => { accrualsUrl = urlData; })
-    .catch((err) => { throw new Error (err.message) });
-  accruals = await axios.get(accrualsUrl);
-  accruals = Papa.parse(accruals.data, { header: true });
-  accruals = accruals.data;
+    .then((urlData) => {
+      accrualsUrl = urlData;
+    })
+    .catch((err) => {
+      throw new Error(err.message);
+    });
 
-  return { accruals, accrualsUpdated };
+  const resp = await axios.get(accrualsUrl);
+
+  const accruals = Papa.parse(resp.data, {
+    header: true,
+    dynamicTyping: true
+  });
+
+  return {
+    accruals: accruals.data,
+    columns: accruals.meta.fields,
+    accrualsUpdated
+  };
 } // getAccruals
 
 /**
  * Updates a user's personKey in DynamoDB for future use
- * 
- * @param employeeNumber user's portal employee number
- * @param personKey from Unanet to add to user's profile
+ *
+ * @param {number} employeeNumber user's portal employee number
+ * @param {string} personKey from Unanet to add to user's profile
  */
 async function updateUserPersonKey(employeeNumber, personKey) {
   // common table for both commands
@@ -313,7 +357,7 @@ async function updateUserPersonKey(employeeNumber, personKey) {
   const { id } = await getEmployeeAttrFromDb(employeeNumber, 'id');
 
   // use their ID to update the personKey
-  const updateCommand = new UpdateCommand({ 
+  const updateCommand = new UpdateCommand({
     TableName,
     Key: { id },
     UpdateExpression: `set unanetPersonKey = :k`,
@@ -330,8 +374,8 @@ async function updateUserPersonKey(employeeNumber, personKey) {
 
 /**
  * Returns an auth token for the API account
- * 
- * @returns the auth token
+ *
+ * @returns {Promise<string>} the auth token
  */
 async function getAccessToken() {
   // get login info from parameter store
@@ -352,9 +396,9 @@ async function getAccessToken() {
 
 /**
  * Gets a user's key from Unanet API based on Portal employeeNumber
- * 
- * @param employeeNumber Portal Employee Number
- * @returns Unanet personKey
+ *
+ * @param {number} employeeNumber Portal Employee Number
+ * @returns {Promise<string>} Unanet personKey
  */
 async function getUnanetPersonKey(employeeNumber) {
   // build options to find employee based on employeeNumber
@@ -371,7 +415,8 @@ async function getUnanetPersonKey(employeeNumber) {
   let resp = await axios(options);
 
   // pull out the employee's key
-  if (resp.data?.items?.length !== 1) throw new Error(`Could not distinguish Unanet employee ${employeeNumber} (${resp.data.length} options).`);
+  if (resp.data?.items?.length !== 1)
+    throw new Error(`Could not distinguish Unanet employee ${employeeNumber} (${resp.data.length} options).`);
   let personKey = resp.data.items[0].key;
 
   // update user's DynamoDB object and return for usage now
@@ -382,10 +427,10 @@ async function getUnanetPersonKey(employeeNumber) {
 /**
  * Gets the user's timesheets within a given time period
  *
- * @param startDate - The period start date
- * @param endDate - The period end date
- * @param userId - The unanet personKey
- * @returns Array of all user timesheets within the given time period
+ * @param {Date} startDate - The period start date
+ * @param {Date} endDate - The period end date
+ * @param {string} userId - The unanet personKey
+ * @returns {Promise<any[]>} Array of all user timesheets within the given time period
  */
 async function getRawTimesheets(startDate, endDate, userId) {
   // build options to search for user's time within the start and end dates
@@ -407,7 +452,7 @@ async function getRawTimesheets(startDate, endDate, userId) {
 
 /**
  * Fills the timesheets with jobcode data
- * 
+ *
  * @param timesheets timesheets from getRawTimesheets
  * @returns timesheets with jobcode data added
  */
@@ -419,7 +464,7 @@ async function getFullTimesheets(timesheets) {
   let resp = await Promise.all(promises);
 
   // pull out response data and return it all together
-  let filledTimesheets = resp.map(res => res.data);
+  let filledTimesheets = resp.map((res) => res.data);
   return filledTimesheets;
 } // getFullTimesheets
 
@@ -432,38 +477,37 @@ async function getFullTimesheets(timesheets) {
 /**
  * Gets the project name, without any decimals or numbers
  * Eg. converts "9876.54.32.PROJECT.OY1" to "PROJECT OY1"
- * 
- * @param projectName Name of the project, for converting
- * @returns More human-friendly project name for Portal
+ *
+ * @param {string} projectName Name of the project, for converting
+ * @returns {string} More human-friendly project name for Portal
  */
 function getProjectName(projectName) {
   // split up each part and remove any parts that are all digits
   let parts = projectName.split('.');
 
-  // remove part if it's just numbers
-  for (let i = 0; i < parts.length; i++)
-    if (/^\d+$/g.test(parts[i]))
-      parts.splice(i--, 1); // post-decrement keeps i correct after splice
-  
-  // return leftover parts and remove any extra whitespace/underscores
-  return parts.join(' ').replaceAll(/[ +_*]/g, ' ');
+  // remove part if it's just numbers. '\D' is any non-number character
+  parts.filter((value) => /\D/.test(value));
+
+  // return leftover parts and replace any number of spaces/underscores with a single space
+  return parts.join(' ').replaceAll(/[ _]+/g, ' ').trim();
 } // getProjectName
 
 /**
  * Combines any number of supplemental data objects
- * 
+ *
  * @param supps the supplemental data objects
- * @returns combined supplementalData object
+ * @returns {Supplement} combined supplementalData object
  */
 function combineSupplementalData(...supps) {
   // base default to make sure everything has at least some data
+  /** @type Supplement */
   let combined = { today: 0, future: { days: 0, duration: 0 }, nonBillables: [] };
 
   // loop through all supplemental data and combine it
   for (let supp of supps) {
     if (!supp) continue; // avoid error if it's undefined
     combined.today += supp.today ?? 0;
-    combined.nonBillables = [...new Set([...combined.nonBillables, ...supp.nonBillables ?? []])];
+    combined.nonBillables = [...new Set([...combined.nonBillables, ...(supp.nonBillables ?? [])])];
     combined.future.days += supp.future?.days ?? 0;
     combined.future.duration += supp.future?.duration ?? 0;
   }
@@ -473,9 +517,9 @@ function combineSupplementalData(...supps) {
 
 /**
  * Helper to seralize an error
- * 
+ *
  * @param err the error to seralized
- * @reutrns object of serialized data for printing/returning
+ * @returns object of serialized data for printing/returning
  */
 function serializeError(err) {
   if (!err) return null;
@@ -483,31 +527,32 @@ function serializeError(err) {
   return {
     name: err.name ?? null,
     message: err.message ?? null,
-    stack: err.stack ?? null 
+    stack: err.stack ?? null
   };
 } // serializeError
 
 /**
  * Helper to redact data from a string
- * 
- * @param str string to redact
- * @param start how many characters to keep on the start
- * @param end how many characters to keep on the end
- * @param fill (optional) characters to fill in place of redacted data
+ *
+ * @param {string} str string to redact
+ * @param {number} start how many characters to keep on the start
+ * @param {number} end how many characters to keep on the end
+ * @param {string} fill (optional) characters to fill in place of redacted data
+ * @returns {string} The redacted string
  */
-function redact(str, start, end, fill='***') {
-  if ([str, start, end, fill].some(v => v == null)) return null;
+function redact(str, start, end, fill = '***') {
+  if ([str, start, end, fill].some((v) => v === null)) return null;
   return str.slice(0, start) + fill + str.slice(-end);
 } // redact
 
 /**
  * Builds an object to use in Promise rejections based on whether
  * or not Unanet is down, or if it was the code that errored.
- * 
+ *
  * @param err Error object
  * @returns object to use for Promise.reject()
  */
-async function handleError(err){
+async function handleError(err) {
   // make sure the error function doesn't error
   err ??= new Error('Unknown error occurred.');
 
@@ -534,8 +579,8 @@ async function handleError(err){
     // Unanet is down
     return {
       status: 503,
-      message: "Unanet API failed to respond.",
-      code: "ERR_UNANET_DOWN",
+      message: 'Unanet API failed to respond.',
+      code: 'ERR_UNANET_DOWN',
       body
     };
   }
