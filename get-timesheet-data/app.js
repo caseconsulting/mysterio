@@ -20,7 +20,7 @@ const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
 async function handler(event) {
   try {
     // use Unanet all the time after certain date
-    let unanetDate = '2025-07-01';
+    let unanetDate = '2025-08-01';
     let useUnanet = dateUtils.isSameOrAfter(dateUtils.getTodaysDate(), unanetDate, 'day') || process.env.STAGE !== 'prod';
     if (useUnanet) return await unanetHandler(event);
 
