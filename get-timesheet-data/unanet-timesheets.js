@@ -25,6 +25,15 @@ const STAGE = process.env.STAGE;
 const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
 const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
 const BILLABLE_CODES = ['BILL_SVCS'];
+const ACCRUAL_HEADERS = new Set(['CASE_CARES', 'CASE_CONNECTIONS', 'HOLIDAY', 'PTO']);
+// csv column names
+const COLUMNS = {
+  name: 'Name',
+  number: 'Employee Number',
+
+  // these must map values in ACCRUAL_HEADERS to a csv column name
+  PTO: 'Period Hours Available'
+};
 
 // DynamoDB
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
@@ -102,24 +111,20 @@ async function handler(event) {
     let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, unanetPersonKey);
     let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(employeeNumber);
 
-    // TODO: subtract PTO hours from PTO Balances if it was submitted after the Unanet CSV upload
-    // caveat: you have to use timeslips from `getTimesheet` to do this, and then edit ptoBalances
+    // Subtract pto used since the date the csv file was uploaded to give the up-to-date pto balance:
+    // Assuming the report was uploaded before the end of the workday, this date doesn't include the up-to-date pto info.
+    // i.e. ptoBalances is up to and not including this date
+    const cutoffDate = ptoSupp.accrualsUpdated;
+    const today = new Date();
 
-    // This code may or may not be a working solution to that:
-    // // Assuming the report was uploaded before the end of the workday, this date doesn't include the up to date pto info.
-    // // i.e. ptoBalances is up to and not including this date
-    // const cutoffDate = ptoSupp.accrualsUpdated;
+    // destructure newTimesheets from nested object
+    const {
+      timesheet: { timesheets: newTimesheets }
+    } = await getTimesheet(cutoffDate, today, dateUtils.format(today, null, 'MMMM'), unanetPersonKey);
 
-    // const today = new Date();
-    // // destructure newTimesheets from nested object
-    // const {
-    //   timesheet: { timesheets: newTimesheets }
-    // } = await getTimesheet(cutoffDate, today, dateUtils.format(today, null, 'MMMM'), unanetPersonKey);
-
-    // // subtract new time for job code from pto balance retrieved from csv file
-    // for (const [jobCode, seconds] of Object.entries(newTimesheets)) {
-    //   ptoBalances[jobCode] -= seconds;
-    // }
+    for (const [key, value] of Object.entries(newTimesheets)) {
+      if (ACCRUAL_HEADERS.has(key)) ptoBalances[key] -= value;
+    }
 
     let supplementalData = combineSupplementalData(timeSupp, ptoSupp);
     body = { system: 'Unanet', timesheets, ptoBalances, supplementalData };
@@ -238,19 +243,15 @@ async function getPtoBalances(portalNumber) {
   // get current employee's portal number
   const { employeeNumber } = await getEmployeeAttrFromDb(portalNumber, 'employeeNumber');
 
-  // const ACCRUAL_HEADERS = new Set(['CASE_CARES', 'HOLIDAY', 'PTO']);
   let ptoBalances = {};
 
-  // values are the csv column names
-  const columns = {
-    name: 'Name',
-    number: 'Employee Number',
-    pto: 'Period Hours Available'
-  };
-
-  const empAccrual = accruals.find((row) => row[columns.number] === employeeNumber);
-  // TODO: other types of pto might be supported in the future. Iterate through `ACCRUAL_HEADERS` and pull out the data like below
-  ptoBalances['PTO'] = hoursToSeconds(empAccrual[columns.pto]);
+  const empAccrual = accruals.find((row) => row[COLUMNS.number] === employeeNumber);
+  for (const accrual of ACCRUAL_HEADERS) {
+    const csvCol = COLUMNS[accrual];
+    if (csvCol && empAccrual[csvCol]) {
+      ptoBalances[accrual] = hoursToSeconds(empAccrual[csvCol]);
+    }
+  }
 
   return { ptoBalances, supplementalData: { accrualsUpdated } };
 } // getPtoBalances
