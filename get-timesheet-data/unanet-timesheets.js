@@ -9,13 +9,15 @@
 /**
  * @typedef {{ startDate: Date, endDate: Date, title: string, timesheets: { [jobCode: string]: number; } }} Timesheet
  * @typedef {{ today: number, future: { days: number, duration: number }, nonBillables: string[] }} Supplement
+ * @typedef {'PTO' | 'CASE_CARES' | 'CASE_CONNECTIONS' | 'HOLIDAY' | 'TRAINING_TUITION'} PtoCode
+ * @typedef {Record<PtoCode, { actuals: number, balance: number }} PtoData Maps a pto code to categorized hours
+ * @typedef {Record<number, PtoData>} PtoMap Maps employee number to PtoData
  */
 
 // utils
 const axios = require('axios');
 const dateUtils = require('dateUtils'); // from shared lambda layer
 const { getSecret } = require('./secrets');
-const Papa = require('papaparse');
 const hoursToSeconds = (hours) => hours * 60 * 60;
 
 // global and stage-based vars
@@ -25,15 +27,7 @@ const STAGE = process.env.STAGE;
 const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
 const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
 const BILLABLE_CODES = ['BILL_SVCS'];
-const ACCRUAL_HEADERS = new Set(['CASE_CARES', 'CASE_CONNECTIONS', 'HOLIDAY', 'PTO']);
-// csv column names
-const COLUMNS = {
-  name: 'Name',
-  number: 'Employee Number',
-
-  // these must map values in ACCRUAL_HEADERS to a csv column name
-  PTO: 'Period Hours Available'
-};
+const ACCRUAL_HEADERS = new Set(['CASE_CARES', 'CASE_CONNECTIONS', 'HOLIDAY', 'PTO', 'TRAINING_TUITION']);
 
 // DynamoDB
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
@@ -45,7 +39,7 @@ const docClient = DynamoDBDocumentClient.from(dbClient);
 const { S3Client, HeadObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const ACCRUALS_BUCKET = `case-expense-app-unanet-data-${STAGE}`;
-const ACCRUALS_KEY = 'accruals.csv';
+const ACCRUALS_KEY = 'accruals.json';
 
 /**
  *
@@ -77,7 +71,7 @@ const ACCRUALS_KEY = 'accruals.csv';
  * - [x] Get PTO accruals data from uploaded CSV
  *
  * Important to finish:
- * - [ ] Calculate actual PTO accrual based on CSV accrual, CSV upload date, and timesheets
+ * - [x] Calculate actual PTO accrual based on CSV accrual, CSV upload date, and timesheets
  * - [ ] Resolve todo's
  *
  * Would be good to finish:
@@ -111,9 +105,9 @@ async function handler(event) {
     let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, unanetPersonKey);
     let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(employeeNumber);
 
-    // Subtract pto used since the date the csv file was uploaded to give the up-to-date pto balance:
-    // Assuming the report was uploaded before the end of the workday, this date doesn't include the up-to-date pto info.
-    // i.e. ptoBalances is up to and not including this date
+    // Subtract pto used since the date the file was uploaded to give the up-to-date pto balance:
+
+    // file is uploaded before start of day, containing previous days data
     const cutoffDate = ptoSupp.accrualsUpdated;
     const today = new Date();
 
@@ -234,26 +228,16 @@ async function getTimesheet(startDate, endDate, title, userId) {
  * @param unanetId Unanet ID of user
  * @param portalNumber employeeNumber from portal
  * @param timesheets user's timesheets
- * @return {Promise<{ ptoBalances: { [ptoType: string]: number; }, supplementalData: { accrualsUpdated: Date } }>} PTO balances and maybe supplemental data
+ * @return {Promise<{
+ *   ptoBalances: PtoData,
+ *   supplementalData: {
+ *     accrualsUpdated: Date
+ *   }
+ * }>} PTO balances and supplemental data
  */
 async function getPtoBalances(portalNumber) {
-  // accruals data to fill
-  let { accruals, accrualsUpdated } = await getAccruals();
-
-  // get current employee's portal number
-  const { employeeNumber } = await getEmployeeAttrFromDb(portalNumber, 'employeeNumber');
-
-  let ptoBalances = {};
-
-  const empAccrual = accruals.find((row) => row[COLUMNS.number] === employeeNumber);
-  for (const accrual of ACCRUAL_HEADERS) {
-    const csvCol = COLUMNS[accrual];
-    if (csvCol && empAccrual[csvCol]) {
-      ptoBalances[accrual] = hoursToSeconds(empAccrual[csvCol]);
-    }
-  }
-
-  return { ptoBalances, supplementalData: { accrualsUpdated } };
+  const { accruals, accrualsUpdated } = await getAccruals();
+  return { ptoBalances: accruals[portalNumber], supplementalData: { accrualsUpdated } };
 } // getPtoBalances
 
 // |----------------------------------------------------|
@@ -291,13 +275,11 @@ async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
 } // getEmployeeAttrFromDb
 
 /**
- * Returns the Unanet Accruals information as a JSON object (parsed from csv),
- * along with the date it was last updated.
+ * Returns the Unanet Accruals information as a JSON object, along with the date it was last updated.
  *
- * @returns {Promise<{ accruals: any[], columns: string[], accrualsUpdated: Date }>}
- *          - accruals - the csv rows
- *          - columns - the names of the csv columns, in order
- *          - accrualsUpdated - the date the csv file was uploaded
+ * @returns {Promise<{ accruals: PtoMap, accrualsUpdated: Date }>}
+ *          - accruals - Maps employee number to pto data
+ *          - accrualsUpdated - the date the accrual data was uploaded
  */
 async function getAccruals() {
   // build command to send S3
@@ -331,15 +313,8 @@ async function getAccruals() {
     });
 
   const resp = await axios.get(accrualsUrl);
-
-  const accruals = Papa.parse(resp.data, {
-    header: true,
-    dynamicTyping: true
-  });
-
   return {
-    accruals: accruals.data,
-    columns: accruals.meta.fields,
+    accruals: resp.data,
     accrualsUpdated
   };
 } // getAccruals
