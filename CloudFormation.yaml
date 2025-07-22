@@ -155,6 +155,74 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${UpdateBambooHREmployeeFunction}
       RetentionInDays: 30
+  GetTimesheetDataFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: !Join
+        - ''
+        - - mysterio-get-timesheet-data-
+          - !Ref Stage
+      CodeUri: get-timesheet-data/
+      AutoPublishAlias: !Ref Stage
+      Description: Retrieves timesheet data from Quickbooks/ADP API for given user between a date range
+      Handler: app.handler
+      Layers:
+        - !Ref DependenciesLayer
+        - !Ref SharedLayer
+      Runtime: nodejs20.x
+      ProvisionedConcurrencyConfig:
+        ProvisionedConcurrentExecutions: 5
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:ListBucket
+              Resource:
+                - !Sub arn:aws:s3:::case-expense-app-unanet-data-${Stage}
+                - !Sub arn:aws:s3:::case-expense-app-unanet-data-${Stage}/*
+        - Statement:
+            - Action:
+                - dynamodb:Scan
+                - dynamodb:Query
+                - dynamodb:UpdateItem
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-employees
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/Unanet/login
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/ADP/*
+        - Statement:
+            - Action:
+                - lambda:InvokeFunction
+                - lambda:InvokeAsync
+              Effect: Allow
+              Resource: '*'
+        - Statement:
+            - Action:
+                - kms:Decrypt
+              Effect: Allow
+              Resource: '*'
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
+  GetTimesheetDataFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn:
+      - GetTimesheetDataFunction
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${GetTimesheetDataFunction}
+      RetentionInDays: 30
   BasecampTokenFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
