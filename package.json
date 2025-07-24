@@ -25,7 +25,6 @@
     "tail:dev:basecamp-token": "sam logs -n BasecampTokenFunction --stack-name mysterio-dev --tail",
     "tail:test:basecamp-token": "sam logs -n BasecampTokenFunction --stack-name mysterio-test --tail",
     "tail:prod:basecamp-token": "sam logs -n BasecampTokenFunction --stack-name mysterio-prod --tail --profile prod",
-    "test": "jasmine",
     "validate": "npm ls"
   },
   "engines": {
