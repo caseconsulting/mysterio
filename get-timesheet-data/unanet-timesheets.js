@@ -124,9 +124,9 @@ async function handler(event) {
     body = { system: 'Unanet', timesheets, ptoBalances, supplementalData };
 
     // return everything together
-    return Promise.resolve({ statusCode: 200, body });
+    return { status: 200, body };
   } catch (err) {
-    return Promise.reject(await handleError(err));
+    return await handleError(err);
   }
 } // handler
 
@@ -297,6 +297,17 @@ async function getAccruals() {
       accrualsUpdated = headObjectData.LastModified;
     })
     .catch((err) => {
+      if (err.name == 'NotFound') {
+        // s3 object does not exist
+        const wrappedError = new Error(
+          `Could not find PTO file in S3. Bucket: ${ACCRUALS_BUCKET}, Key: ${ACCRUALS_KEY}`,
+          {
+            cause: err
+          }
+        );
+        wrappedError.code = 'ERR_S3_NOT_FOUND';
+        throw wrappedError;
+      }
       throw new Error(err.message);
     });
   accrualsUpdated = dateUtils.subtract(accrualsUpdated, 4, 'h');
@@ -544,7 +555,6 @@ async function handleError(err) {
   let ping = await axios.get(BASE_URL + '/rest/ping');
   if (ping?.status < 300 && ping?.status >= 200) {
     // Unanet is up
-    console.log(err);
     return {
       status: 500,
       message: err.message,
