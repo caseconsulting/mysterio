@@ -377,7 +377,9 @@ async function getAccessToken() {
   };
 
   // request and return token from Unanet API
-  let resp = await axios(options);
+  try { let resp = await axios(options) }
+  catch (err) { throw new Error(`Login to Unanet failed: ${err.message}`) }
+
   return resp.data.token;
 } // getAccessToken
 
@@ -528,7 +530,7 @@ function serializeError(err) {
  * @returns {string} The redacted string
  */
 function redact(str, start, end, fill = '***') {
-  if ([str, start, end, fill].some((v) => v === null)) return null;
+  if ([str, start, end, fill].some((v) => v == null)) return null;
   return str.slice(0, start) + fill + str.slice(-end);
 } // redact
 
