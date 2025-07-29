@@ -377,10 +377,13 @@ async function getAccessToken() {
   };
 
   // request and return token from Unanet API
-  try { let resp = await axios(options) }
-  catch (err) { throw new Error(`Login to Unanet failed: ${err.message}`) }
-
-  return resp.data.token;
+  try {
+    let resp = await axios(options);
+    return resp.data.token;
+  }
+  catch (err) {
+    throw new Error(`Login to Unanet failed: ${err.message}`);
+  }
 } // getAccessToken
 
 /**
