@@ -23,6 +23,7 @@ const hoursToSeconds = (hours) => hours * 60 * 60;
 // global and stage-based vars
 /** @type string */
 let accessToken;
+let eventOptions; // vars to allow event to communicate with all functions
 const STAGE = process.env.STAGE;
 const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
 const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
@@ -95,7 +96,8 @@ const ACCRUALS_KEY = 'accruals.json';
 async function handler(event) {
   try {
     // pull out vars from the event
-    let { periods, employeeNumber, unanetPersonKey } = event;
+    let { periods, employeeNumber, unanetPersonKey, options } = event;
+    eventOptions = options ?? {};
 
     // log in to Unanet
     accessToken = await getAccessToken();
@@ -437,9 +439,10 @@ async function getRawTimesheets(startDate, endDate, userId) {
     headers: { Authorization: `Bearer ${accessToken}` }
   };
 
-  // get response and just return it
+  // get response
   let resp = await axios(options);
-  return resp.data.items;
+  filtered = filterTimesheets(resp.data.items);
+  return filtered;
 } // getRawTimesheets
 
 /**
@@ -506,6 +509,26 @@ function combineSupplementalData(...supps) {
 
   return combined;
 } // combineSupplementalData
+
+/**
+ * Filters timesheets based on eventOptions
+ * 
+ * @param timesheets to filter
+ * @returns filtered timesheets object
+ */
+function filterTimesheets(timesheets) {
+  let filtered = timesheets;
+
+  // filter for status
+  if (eventOptions.status) {
+    let status = eventOptions.status;
+    if(!Array.isArray(status)) status = [status];
+    filtered = filtered.filter((timesheet) => status.includes(timesheet.status));
+  }
+  
+  // return filtered timesheets
+  return filtered;
+} // filterTimesheets
 
 /**
  * Helper to seralize an error
