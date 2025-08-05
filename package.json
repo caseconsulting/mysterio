@@ -1,6 +1,6 @@
 {
   "name": "mysterio",
-  "version": "4.15.0",
+  "version": "4.16.0",
   "private": true,
   "description": "Facade for external APIs",
   "repository": "https://github.com/caseconsulting/mysterio",
@@ -13,6 +13,7 @@
     "deploy:packaged:test": "sam deploy --template-file packaged.yaml --region us-east-1 --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM --s3-bucket case-expense-app-deployments-test --s3-prefix sam --stack-name mysterio-test --parameter-overrides Stage=test",
     "deploy:prod": "npm run build && npm run package:prod && npm run deploy:packaged:prod",
     "deploy:packaged:prod": "sam deploy --template-file packaged.yaml --region us-east-1 --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM --s3-bucket case-consulting-expense-app-deployments-prod --s3-prefix sam --stack-name mysterio-prod --parameter-overrides Stage=prod --profile prod",
+    "invoke:getTimesheetData": "sam local invoke GetTimesheetDataFunction --env-vars env.json --event ./get-timesheet-data/testEvent.json --template CloudFormation.yaml",
     "local:basecamp-token": "npm run build && sam local invoke BasecampTokenFunction -e basecamp-token/event.json",
     "outdated": "npm outdated; npm run outdated:layers",
     "outdated:layers": "cd layers/dependencies/nodejs && npm outdated",
@@ -30,5 +31,18 @@
   "engines": {
     "node": ">=20.0.0",
     "npm": ">=10.5.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "3.590.0",
+    "@aws-sdk/client-lambda": "3.590.0",
+    "@aws-sdk/client-sns": "3.590.0",
+    "@aws-sdk/client-ssm": "3.590.0",
+    "@aws-sdk/lib-dynamodb": "3.590.0",
+    "@aws-sdk/s3-request-presigner": "3.590.0",
+    "axios": "1.7.4",
+    "dayjs": "1.11.11",
+    "lodash": "4.17.21",
+    "qs": "6.13.0",
+    "xml2js": "0.6.2"
   }
 }
