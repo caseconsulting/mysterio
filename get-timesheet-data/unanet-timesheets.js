@@ -1,7 +1,7 @@
 /**
  *
  * Unanet Swagger API: https://consultwithcase-sand.unanet.biz/platform/swagger/
- * Rate limit: 5000 calls per day
+ * Rate limit: 5000 calls per day (not 100% sure)
  *
  */
 
@@ -28,6 +28,7 @@ const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
 const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
 const BILLABLE_CODES = ['BILL_SVCS'];
 const ACCRUAL_HEADERS = new Set(['CASE_CARES', 'CASE_CONNECTIONS', 'HOLIDAY', 'PTO', 'TRAINING_TUITION']);
+const PLANABLE_KEYS = { PTO: 'PTO', HOLIDAY: 'HOLIDAY' };
 
 // DynamoDB
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
@@ -42,48 +43,11 @@ const ACCRUALS_BUCKET = `case-expense-app-unanet-data-${STAGE}`;
 const ACCRUALS_KEY = 'accruals.json';
 
 /**
- *
- * #####
- *
- *                       TO WHOEVER IS WORKING ON THIS
- * The best way to disect what is goign on is to read my comments, especially in the API connections section.
- * You can also run the API calls and just return/log the results to see how they are structured.
- * The main problem right now is that the PTO CSV upload (from `getAccruals()`) is only "as of" the date it was submitted
- * (which is returned by `getAccruals()` too). So the PTO Balances being returned need to take that balance and subract anything
- * that has been added to the timesheets since then. Shouldn't be too hard conceptually but I just couldn't get to it.
- * I hope you find things well documented. Ping Paul if you have any questions, he's understands what's going on conceptually and what's needed.
- *
- * #####
- *
- * Done:
- * - [x] Use getSecret to store login info
- * - [x] Store/retrieve PersonKey in/from Dynamo
- * - [x] Pass personkey in the event to save an API call
- * - [x] Add non-billables
- * - [x] Add check for event dates before summing timeslip
- * - [x] Support onlyPto flag
- * - [x] Make title according to passed in titles
- * - [x] Handle yearly calls correctly
- * - [x] How does the frontend react to a period's timesheets being `{}`?
- * - [x] Update frontend to warn that future PTO in Unanet is not included in the planner
- * - [x] Handle Unanet going down vs code crashing
- * - [x] Get PTO data from API
- * - [x] Get PTO accruals data from uploaded CSV
- *
- * Important to finish:
- * - [x] Calculate actual PTO accrual based on CSV accrual, CSV upload date, and timesheets
- * - [ ] Resolve todo's
- *
- * Would be good to finish:
+ * To do:
  * - [ ] Warehouse API data from previous months (only get the last 2 months via API)
+ * - [ ] Find ways to limit API calls and be more efficient to avoid potential rate limiting
  * - [ ] Make efficient calls for multiple users (will be doing entire company at some point)
  * - [ ] Input validation
- *
- * Pre- production deployment:
- * - [ ] Come up with consistent method for admins to know when to upload (maybe just every payroll)
- * - [ ] Check that URLs and such are correct for production
- *    - [ ] Frontend "Open Unanet" button
- *    - [ ] BASE_URL in this code
  */
 
 /**
@@ -179,7 +143,7 @@ async function getTimesheet(startDate, endDate, title, userId) {
   let nonBillables = new Set();
 
   /** @type Timesheet */
-  let timesheet = { startDate, endDate, title, timesheets: {} };
+  let timesheet = { startDate, endDate, title, timesheets: [] };
 
   // loop through each month returned from Unanet API
   for (let month of filledTimesheets) {
@@ -237,7 +201,7 @@ async function getTimesheet(startDate, endDate, title, userId) {
  */
 async function getPtoBalances(portalNumber) {
   const { accruals, accrualsUpdated } = await getAccruals();
-  return { ptoBalances: accruals[portalNumber], supplementalData: { accrualsUpdated } };
+  return { ptoBalances: accruals[portalNumber], supplementalData: { accrualsUpdated, planableKeys: PLANABLE_KEYS } };
 } // getPtoBalances
 
 // |----------------------------------------------------|
@@ -380,8 +344,7 @@ async function getAccessToken() {
   try {
     let resp = await axios(options);
     return resp.data.token;
-  }
-  catch (err) {
+  } catch (err) {
     throw new Error(`Login to Unanet failed: ${err.message}`);
   }
 } // getAccessToken
@@ -493,13 +456,14 @@ function getProjectName(projectName) {
 function combineSupplementalData(...supps) {
   // base default to make sure everything has at least some data
   /** @type Supplement */
-  let combined = { today: 0, future: { days: 0, duration: 0 }, nonBillables: [] };
+  let combined = { today: 0, future: { days: 0, duration: 0 }, nonBillables: [], planableKeys: {} };
 
   // loop through all supplemental data and combine it
   for (let supp of supps) {
     if (!supp) continue; // avoid error if it's undefined
     combined.today += supp.today ?? 0;
     combined.nonBillables = [...new Set([...combined.nonBillables, ...(supp.nonBillables ?? [])])];
+    combined.planableKeys = { ...combined.planableKeys, ...(supp.planableKeys ?? {}) };
     combined.future.days += supp.future?.days ?? 0;
     combined.future.duration += supp.future?.duration ?? 0;
   }
