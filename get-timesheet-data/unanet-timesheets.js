@@ -28,7 +28,7 @@ const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
 const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
 const BILLABLE_CODES = ['BILL_SVCS'];
 const ACCRUAL_HEADERS = new Set(['CASE_CARES', 'CASE_CONNECTIONS', 'HOLIDAY', 'PTO', 'TRAINING_TUITION']);
-const PLANABLE_KEYS = { PTO: 'PTO', HOLIDAY: 'HOLIDAY' };
+const PLANABLE_KEYS = { PTO: 'PTO', Holiday: 'HOLIDAY' };
 
 // DynamoDB
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
