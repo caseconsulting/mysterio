@@ -164,7 +164,8 @@ async function getPeriodTimesheets(periods, userId) {
  */
 async function getTimesheet(startDate, endDate, title, userId) {
   // get data from Unanet
-  let basicTimesheets = await getRawTimesheets(startDate, endDate, userId); // returns monthly blocks
+  let monthStart = dateUtils.format(dateUtils.startOf(startDate, 'month'), null, 'YYYY-MM-DD');
+  let basicTimesheets = await getRawTimesheets(monthStart, endDate, userId); // returns monthly blocks
   let filledTimesheets = await getFullTimesheets(basicTimesheets); // returns monthly blocks with paycodes
 
   // helpful vars
