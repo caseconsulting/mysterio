@@ -8,7 +8,7 @@
 // types
 /**
  * @typedef {{ startDate: Date, endDate: Date, title: string, timesheets: { [jobCode: string]: number; } }} Timesheet
- * @typedef {{ today: number, future: { days: number, duration: number }, nonBillables: string[] }} Supplement
+ * @typedef {{ today: number, future: { days: number, duration: number }, nonBillables: string[], newAccruals: { [jobCode: string]: number; } }} Supplement
  * @typedef {'PTO' | 'CASE_CARES' | 'CASE_CONNECTIONS' | 'HOLIDAY' | 'TRAINING_TUITION'} PtoCode
  * @typedef {Record<PtoCode, { actuals: number, balance: number }} PtoData Maps a pto code to categorized hours
  * @typedef {Record<number, PtoData>} PtoMap Maps employee number to PtoData
@@ -104,23 +104,31 @@ async function handler(event) {
     unanetPersonKey ??= await getUnanetPersonKey(employeeNumber);
 
     // build the return body
-    let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, unanetPersonKey);
     let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(employeeNumber);
+    let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, ptoSupp.accrualsUpdated, unanetPersonKey);
 
-    // Subtract pto used since the date the file was uploaded to give the up-to-date pto balance:
+    return { status: 200, body: timeSupp.newAccruals };
 
-    // file is uploaded before start of day, containing previous days data
-    const cutoffDate = ptoSupp.accrualsUpdated;
-    const today = new Date();
-
-    // destructure newTimesheets from nested object
-    const {
-      timesheet: { timesheets: newTimesheets }
-    } = await getTimesheet(cutoffDate, today, dateUtils.format(today, null, 'MMMM'), unanetPersonKey);
-
-    for (const [key, value] of Object.entries(newTimesheets)) {
-      if (ACCRUAL_HEADERS.has(key)) ptoBalances[key] -= value;
+    // remove new accruals from PTO balances
+    for (const [key, value] of Object.entries(timeSupp.newAccruals ?? {})) {
+      ptoBalances[key] -= value;
     }
+    
+    // subtract PTO balances that were added in after the PTO report was run
+    // ... TODO ...
+
+    // // file is uploaded before start of day, containing previous days data
+    // const cutoffDate = ptoSupp.accrualsUpdated;
+    // const today = new Date();
+
+    // // destructure newTimesheets from nested object
+    // const {
+    //   timesheet: { timesheets: newTimesheets }
+    // } = await getTimesheet(cutoffDate, today, dateUtils.format(today, null, 'MMMM'), unanetPersonKey);
+
+    // for (const [key, value] of Object.entries(newTimesheets)) {
+    //   if (ACCRUAL_HEADERS.has(key)) ptoBalances[key] -= value;
+    // }
 
     let supplementalData = combineSupplementalData(timeSupp, ptoSupp);
     body = { system: 'Unanet', timesheets, ptoBalances, supplementalData };
@@ -136,16 +144,17 @@ async function handler(event) {
  * Gets timesheet data for a given array of periods and a Unanet user
  *
  * @param periods array of periods to get data for
+ * @param ptoBalanceDate cutoff date for when to report PTO balances as future
  * @param userId Unanet key of user to get data for
  * @returns {Promise<{ timesheets: Timesheet[], supplementalData: Supplement[] }>} timesheets and supplemental data for all periods
  */
-async function getPeriodTimesheets(periods, userId) {
+async function getPeriodTimesheets(periods, ptoBalanceDate, userId) {
   // get timesheets and data for all periods
   let timesheets = [];
   let supplDatas = [];
   for (let period of periods) {
     let { startDate, endDate, title } = period;
-    let { timesheet, supplementalData } = await getTimesheet(startDate, endDate, title, userId);
+    let { timesheet, supplementalData } = await getTimesheet(startDate, endDate, title, ptoBalanceDate, userId);
     timesheets.push(timesheet);
     supplDatas.push(supplementalData);
   }
@@ -161,10 +170,11 @@ async function getPeriodTimesheets(periods, userId) {
  * @param {Date} startDate Start date (inclusive) of timesheet data
  * @param {Date} endDate End date (inclusive) of timesheet data
  * @param {string} title title of the timesheet
+ * @param ptoBalanceDate cutoff date for when to report PTO balances as future
  * @param {string} userId Unanet ID of user
  * @returns {Promise<{timesheet: Timesheet, supplementalData: Supplement}>} timesheet object between start and end dates
  */
-async function getTimesheet(startDate, endDate, title, userId) {
+async function getTimesheet(startDate, endDate, title, ptoBalanceDate, userId) {
   // get data from Unanet
   let monthStart = dateUtils.format(dateUtils.startOf(startDate, 'month'), null, 'YYYY-MM-DD');
   let basicTimesheets = await getRawTimesheets(monthStart, endDate, userId); // returns monthly blocks
@@ -193,7 +203,7 @@ async function getTimesheet(startDate, endDate, title, userId) {
       let afterEnd = dateUtils.isAfter(slip.workDate, endDate, 'day');
       if (beforeStart || afterEnd) continue;
 
-      // add the hours worked for the project
+      // pull out some userful vars
       let jobCode = getProjectName(slip.project.name);
       job = {};
       job[jobCode] ??= 0;
@@ -208,14 +218,35 @@ async function getTimesheet(startDate, endDate, title, userId) {
       // if this slip is for today, add it to supplementalData
       if (isToday(slip.workDate)) {
         supplementalData.today ??= 0;
-        supplementalData.today += hoursToSeconds(Number(slip.hoursWorked));
+        supplementalData.today += secondsWorked;
       }
 
       // if this slip is for the future, add it to supplementalData
       if (isFuture(slip.workDate)) {
         supplementalData.future ??= { days: 0, duration: 0 };
         supplementalData.future.days += 1;
-        supplementalData.future.duration += hoursToSeconds(Number(slip.hoursWorked));
+        supplementalData.future.duration += secondsWorked;
+      }
+
+      // add bill code to non-billables if it is not marked as billable
+      if (!BILLABLE_CODES.includes(slip.projectType.name)) {
+        nonBillables.add(jobCode);
+      }
+
+      // add hours to removal total for PTO/Accruals
+      // note: PTO reports are auto-generated at 7:00am EST
+      // each day, regardless of when they were uploaded
+      let genHour = 7;
+      let tzOffset = 4; // Unanet time is 4 hours of AWS
+      let cutoff = dateUtils.setHour(ptoBalanceDate, (genHour + tzOffset) % 24);
+      cutoff = dateUtils.format(cutoff, 'YYYY-MM-DDTHH:mm:ssZ[Z]', 'YYYY-MM-DDTHH:mm:ss[Z]');
+      if (ACCRUAL_HEADERS.has(jobCode) && dateUtils.isAfter(slip.lastUpdate, cutoff, 'hour')) {
+        console.log(`${ACCRUAL_HEADERS.has(jobCode)} && ${dateUtils.isAfter(slip.lastUpdate, cutoff, 'hour')}`)
+        supplementalData.newAccruals ??= {};
+        supplementalData.newAccruals[jobCode] ??= 0;
+        supplementalData.newAccruals[jobCode] += secondsWorked;
+      } else {
+        console.log(`${jobCode} && ${slip.lastUpdate} > ${cutoff} :: ${ACCRUAL_HEADERS.has(jobCode)} && ${dateUtils.isAfter(slip.lastUpdate, cutoff, 'hour')}`)
       }
     }
   }
@@ -232,7 +263,6 @@ async function getTimesheet(startDate, endDate, title, userId) {
  *
  * @param unanetId Unanet ID of user
  * @param portalNumber employeeNumber from portal
- * @param timesheets user's timesheets
  * @return {Promise<{
  *   ptoBalances: PtoData,
  *   supplementalData: {
@@ -240,8 +270,10 @@ async function getTimesheet(startDate, endDate, title, userId) {
  *   }
  * }>} PTO balances and supplemental data
  */
-async function getPtoBalances(portalNumber) {
+async function getPtoBalances(portalNumber, timesheets) {
+  // Get accruals as they were input
   const { accruals, accrualsUpdated } = await getAccruals();
+
   return { ptoBalances: accruals[portalNumber], supplementalData: { accrualsUpdated } };
 } // getPtoBalances
 
@@ -498,13 +530,14 @@ function getProjectName(projectName) {
 function combineSupplementalData(...supps) {
   // base default to make sure everything has at least some data
   /** @type Supplement */
-  let combined = { today: 0, future: { days: 0, duration: 0 }, nonBillables: [] };
+  let combined = { today: 0, future: { days: 0, duration: 0 }, nonBillables: [], newAccruals: {} };
 
   // loop through all supplemental data and combine it
   for (let supp of supps) {
     if (!supp) continue; // avoid error if it's undefined
     combined.today += supp.today ?? 0;
     combined.nonBillables = [...new Set([...combined.nonBillables, ...(supp.nonBillables ?? [])])];
+    combined.newAccruals = { ...combined.newAccruals, ...(supp.newAccruals ?? {}) };
     combined.future.days += supp.future?.days ?? 0;
     combined.future.duration += supp.future?.duration ?? 0;
   }

@@ -347,6 +347,17 @@ function now(timezone = DEFAULT_TIME_ZONE) {
 } // now
 
 /**
+ * Sets the dates hour and returns a string of the date.
+ *
+ * @param {String} date The given date
+ * @param {Number} hour The hour to set the date to (0-23)
+ * @returns String - The date at the given hour in ISO8601_ISOFORMAT (YYYY-MM-DDTHH:mm:ssZ[Z]) 
+ */
+function setHour(date, hour) {
+  return dayjs(date).hour(hour).format(ISO8601_ISOFORMAT);
+} // setDay
+
+/**
  * Sets the dates day and returns a string of the date.
  *
  * @param {String} date The given date
@@ -426,6 +437,7 @@ module.exports = {
   maximum,
   minimum,
   now,
+  setHour,
   setDay,
   setMonth,
   setYear,
