@@ -159,10 +159,8 @@ async function getTimesheet(startDate, endDate, title, userId) {
 
       // add the hours worked for the project
       let jobCode = getProjectName(slip.project.name);
-      job = {};
-      job[jobCode] ??= 0;
-      job[jobCode] += hoursToSeconds(Number(slip.hoursWorked));
-      timesheets.push(job);
+      timesheet.timesheets[jobCode] ??= 0;
+      timesheet.timesheets[jobCode] += hoursToSeconds(Number(slip.hoursWorked));
 
       // add bill code to non-billables if it is not marked as billable
       if (!BILLABLE_CODES.includes(slip.projectType.name)) {
