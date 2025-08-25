@@ -146,7 +146,7 @@ async function getTimesheet(startDate, endDate, title, userId) {
   let nonBillables = new Set();
 
   /** @type Timesheet */
-  let timesheet = { startDate, endDate, title, timesheets: [] };
+  let timesheet = { startDate, endDate, title, timesheets: {} };
 
   // loop through each month returned from Unanet API
   for (let month of filledTimesheets) {
