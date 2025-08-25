@@ -1,6 +1,6 @@
 {
   "name": "mysterio",
-  "version": "4.16.0",
+  "version": "4.17.0",
   "private": true,
   "description": "Facade for external APIs",
   "repository": "https://github.com/caseconsulting/mysterio",
