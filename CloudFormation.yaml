@@ -10,6 +10,7 @@ Parameters:
     Type: String
     Description: Deployment environment (e.g., dev, test, or prod)
     AllowedValues:
+      - sandbox
       - dev
       - test
       - prod
