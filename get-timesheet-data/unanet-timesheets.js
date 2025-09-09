@@ -158,7 +158,7 @@ async function getTimesheet(startDate, endDate, title, userId) {
       if (beforeStart || afterEnd) continue;
 
       // add the hours worked for the project
-      let jobCode = getProjectName(slip.project.name);
+      let jobCode = getProjectName(slip);
       timesheet.timesheets[jobCode] ??= 0;
       timesheet.timesheets[jobCode] += hoursToSeconds(Number(slip.hoursWorked));
 
@@ -437,18 +437,30 @@ async function getFullTimesheets(timesheets) {
  * Gets the project name, without any decimals or numbers
  * Eg. converts "9876.54.32.PROJECT.OY1" to "PROJECT OY1"
  *
- * @param {string} projectName Name of the project, for converting
+ * @param {string} slip The timeslip object
  * @returns {string} More human-friendly project name for Portal
  */
-function getProjectName(projectName) {
-  // split up each part and remove any parts that are all digits
-  let parts = projectName.split('.');
+function getProjectName(slip) {
+  let projectName = slip.project?.name;
+  let taskName = slip.task?.name;
+  let spacesRegex = /[ _]+/g; // regex to match spaces and underscores
+  
+  // get project name: filter out all numeric parts and keep the rest
+  let projectSplit = projectName.split('.');
+  let project = projectSplit.filter((value) => /\D/.test(value)); // '\D' is any non-number character
+  project = project.join(' ');
+  project = project?.replace(spacesRegex, ' '); // trim spaces/underscores
 
-  // remove part if it's just numbers. '\D' is any non-number character
-  parts.filter((value) => /\D/.test(value));
+  // task name often has duplicate information separated by a dash, and
+  // duplicate option year text; remove both
+  let task = taskName;
+  if (task?.includes(' - ')) task = task.split(' - ')[1];
+  task = task?.replace(/OY[0-9]/g, '');
+  task = task?.replace(spacesRegex, ' '); // trim spaces/underscores
 
-  // return leftover parts and replace any number of spaces/underscores with a single space
-  return parts.join(' ').replaceAll(/[ _]+/g, ' ').trim();
+  // return with task name if it exists
+  if (!task) return project;
+  else return `${project} - ${task}`;
 } // getProjectName
 
 /**
