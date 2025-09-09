@@ -87,6 +87,7 @@ async function handler(event) {
     }
 
     let supplementalData = combineSupplementalData(timeSupp, ptoSupp);
+    processSupplementalData(supplementalData);
     body = { system: 'Unanet', timesheets, ptoBalances, supplementalData };
 
     // return everything together
@@ -175,9 +176,9 @@ async function getTimesheet(startDate, endDate, title, userId) {
 
       // if this slip is for the future, add it to supplementalData
       if (isFuture(slip.workDate)) {
-        supplementalData.future ??= { days: 0, duration: 0 };
-        supplementalData.future.days += 1;
-        supplementalData.future.duration += hoursToSeconds(Number(slip.hoursWorked));
+        supplementalData.future ??= { raw: {} }
+        supplementalData.future.raw[slip.workDate] ??= 0;
+        supplementalData.future.raw[slip.workDate] += hoursToSeconds(Number(slip.hoursWorked));
       }
     }
   }
@@ -472,7 +473,7 @@ function getProjectName(slip) {
 function combineSupplementalData(...supps) {
   // base default to make sure everything has at least some data
   /** @type Supplement */
-  let combined = { today: 0, future: { days: 0, duration: 0 }, nonBillables: [], planableKeys: {} };
+  let combined = { today: 0, future: { days: new Set(), duration: 0 }, nonBillables: [], planableKeys: {} };
 
   // loop through all supplemental data and combine it
   for (let supp of supps) {
@@ -480,12 +481,32 @@ function combineSupplementalData(...supps) {
     combined.today += supp.today ?? 0;
     combined.nonBillables = [...new Set([...combined.nonBillables, ...(supp.nonBillables ?? [])])];
     combined.planableKeys = { ...combined.planableKeys, ...(supp.planableKeys ?? {}) };
-    combined.future.days += supp.future?.days ?? 0;
-    combined.future.duration += supp.future?.duration ?? 0;
+    combined.future.raw = { ...combined.future.raw, ...(supp.future?.raw ?? {}) }
   }
 
   return combined;
 } // combineSupplementalData
+
+/**
+ * Last-second conversions of supplemental data before returning it. Do not use this anywhere
+ * other than a last-second conversion of data before returning the handler.
+ * 
+ * Currently does the following:
+ *  - Converts future days raw to days and duration
+ * 
+ * @param data the supplemental data object to update
+ */
+function processSupplementalData(data) {
+  if (data.future?.raw) {
+    let durations = Object.values(data.future.raw);
+    console.log(durations);
+    data.future = {
+      days: durations.length,
+      duration: durations.reduce((acc, curr) => acc + curr, 0)
+    }
+  }
+} // processSupplementalData
+
 
 /**
  * Filters timesheets based on eventOptions
