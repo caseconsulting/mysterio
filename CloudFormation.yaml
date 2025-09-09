@@ -16,29 +16,6 @@ Parameters:
 
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
-  # Api:
-  #   # API Gateway endpoint type: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-apigateway-restapi-endpointconfiguration.html
-  #   EndpointConfiguration: REGIONAL
-  #
-  #   # Cross Origin Resources Sharing (CORS): https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-api-corsconfiguration.html
-  #   # Cors:
-  #   #   AllowMethods: "GET, OPTIONS"
-  #   #   AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
-  #   #   AllowOrigin: "'*'"
-  #
-  #   # API Gateway access logging: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-apigateway-stage-accesslogsetting.html
-  #   AccessLogSetting:
-  #     DestinationArn: !Sub
-  #       - arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/apigateway/mysterio-${stageName}:*
-  #       - stageName: !Ref Stage
-  #     Format: $context.identity.sourceIp $context.identity.caller $context.identity.user [$context.requestTime] "$context.httpMethod $context.resourcePath $context.protocol" $context.status $context.responseLength $context.requestId
-  #
-  #   # API Gateway authorization: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-controlling-access-to-apis.html
-  #   #                            https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-api-apiauth.html
-  #   Auth:
-  #     DefaultAuthorizer: AWS_IAM
-  #     InvokeRole: CALLER_CREDENTIALS # default, can specify other role or NONE
-
   Function:
     Tags:
       Application: mysterio
