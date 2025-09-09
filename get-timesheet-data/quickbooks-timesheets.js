@@ -1,256 +1,596 @@
-const _ = require('lodash');
+/**
+ *
+ * Unanet Swagger API: https://consultwithcase-sand.unanet.biz/platform/swagger/
+ * Rate limit: 5000 calls per day (not 100% sure)
+ *
+ */
+
+// types
+/**
+ * @typedef {{ startDate: Date, endDate: Date, title: string, timesheets: { [jobCode: string]: number; } }} Timesheet
+ * @typedef {{ today: number, future: { days: number, duration: number }, nonBillables: string[] }} Supplement
+ * @typedef {'PTO' | 'CASE_CARES' | 'CASE_CONNECTIONS' | 'HOLIDAY' | 'TRAINING_TUITION'} PtoCode
+ * @typedef {Record<PtoCode, { actuals: number, balance: number }} PtoData Maps a pto code to categorized hours
+ * @typedef {Record<number, PtoData>} PtoMap Maps employee number to PtoData
+ */
+
+// utils
 const axios = require('axios');
 const dateUtils = require('dateUtils'); // from shared lambda layer
 const { getSecret } = require('./secrets');
-const { getTimesheetDateBatches } = require('./shared');
+const hoursToSeconds = (hours) => hours * 60 * 60;
 
+// global and stage-based vars
+/** @type string */
 let accessToken;
+let eventOptions; // vars to allow event to communicate with all functions
+const STAGE = process.env.STAGE;
+const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
+const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
+const BILLABLE_CODES = ['BILL_SVCS'];
+const ACCRUAL_HEADERS = new Set(['CASE_CARES', 'CASE_CONNECTIONS', 'HOLIDAY', 'PTO', 'TRAINING_TUITION']);
+const PLANABLE_KEYS = { PTO: 'PTO', Holiday: 'HOLIDAY' };
+
+// DynamoDB
+const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBDocumentClient, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const dbClient = new DynamoDBClient({});
+const docClient = DynamoDBDocumentClient.from(dbClient);
+
+// S3
+const { S3Client, HeadObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const ACCRUALS_BUCKET = `case-expense-app-unanet-data-${STAGE}`;
+const ACCRUALS_KEY = 'accruals.json';
 
 /**
- * The handler for quickbooks timesheet data
+ * To do:
+ * - [ ] Warehouse API data from previous months (only get the last 2 months via API)
+ * - [ ] Find ways to limit API calls and be more efficient to avoid potential rate limiting
+ * - [ ] Make efficient calls for multiple users (will be doing entire company at some point)
+ * - [ ] Input validation
+ */
+
+/**
+ * Handler for Unanet timesheet data
  *
- * @param {Object} event - The lambda event
+ * @param event - The lambda event
  * @returns Object - The timesheet data
  */
 async function handler(event) {
   try {
-    let employeeNumber = event.employeeNumber;
-    let onlyPto = event.onlyPto;
-    // get access token from parameter store
-    accessToken = await getSecret('/TSheets/accessToken');
-    // get QuickBooks user
-    let userData = await getUser(employeeNumber);
-    let [userId, user] = Object.entries(userData)[0];
-    // convert a user's PTO jobcodes into an array of jobcode Objects
-    let ptoJobcodes = _.map(userData.jobcodes, (value, key) => {
-      return { id: value.id, parentId: value.parent_id, type: value.type, name: value.name };
-    });
-    if (onlyPto) {
-      // return only PTO jobcodes and early exit
-      let ptoBalances = _.mapKeys(user.pto_balances, (value, key) => getJobcode(key, ptoJobcodes)?.name);
-      return { statusCode: 200, body: { ptoBalances } };
+    // pull out vars from the event
+    let { periods, employeeNumber, unanetPersonKey, options } = event;
+    eventOptions = options ?? {};
+
+    // log in to Unanet
+    accessToken = await getAccessToken();
+    unanetPersonKey ??= await getUnanetPersonKey(employeeNumber);
+
+    // build the return body
+    let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, unanetPersonKey);
+    let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(employeeNumber);
+
+    // Subtract pto used since the date the file was uploaded to give the up-to-date pto balance:
+
+    // file is uploaded before start of day, containing previous days data
+    const cutoffDate = ptoSupp.accrualsUpdated;
+    const today = new Date();
+
+    // destructure newTimesheets from nested object
+    const {
+      timesheet: { timesheets: newTimesheets }
+    } = await getTimesheet(cutoffDate, today, dateUtils.format(today, null, 'MMMM'), unanetPersonKey);
+
+    for (const [key, value] of Object.entries(newTimesheets)) {
+      if (ACCRUAL_HEADERS.has(key)) ptoBalances[key] -= value;
     }
-    let periods = event.periods;
-    let startDate = periods[0].startDate;
-    let endDate = periods[periods.length - 1].endDate;
-    // get Quickbooks user jobcodes and timesheets data
-    let { jobcodes: jobcodesData, timesheets: timesheetsData } = await getTimesheets(startDate, endDate, userId);
-    // merge regular jobcodes with pto jobcodes
-    jobcodesData = [...jobcodesData, ...ptoJobcodes];
-    // calculate how many days are entered in the future
-    let supplementalData = getSupplementalData(timesheetsData, jobcodesData);
-    // group timesheet entries by month and each month by jobcodes with the sum of their duration
-    let periodTimesheets = getPeriodTimesheets(timesheetsData, jobcodesData, periods);
-    // set pto balances
-    let ptoBalances = _.mapKeys(user.pto_balances, (value, key) => getJobcode(key, jobcodesData)?.name);
-    return Promise.resolve({
-      statusCode: 200,
-      body: { timesheets: periodTimesheets, ptoBalances, supplementalData, system: 'QuickBooks' }
-    });
+
+    let supplementalData = combineSupplementalData(timeSupp, ptoSupp);
+    processSupplementalData(supplementalData);
+    body = { system: 'Unanet', timesheets, ptoBalances, supplementalData };
+
+    // return everything together
+    return { status: 200, body };
   } catch (err) {
-    console.log(err);
-    return err;
+    return await handleError(err);
   }
 } // handler
 
 /**
- * Returns the user's non-billable jobcodes.
+ * Gets timesheet data for a given array of periods and a Unanet user
  *
- * @param {Array} timesheetsData - The user's timesheets
- * @param {Array} jobcodesData - All jobcodes
- * @returns Array - The non-billable jobcodes
+ * @param periods array of periods to get data for
+ * @param userId Unanet key of user to get data for
+ * @returns {Promise<{ timesheets: Timesheet[], supplementalData: Supplement[] }>} timesheets and supplemental data for all periods
  */
-function getNonBillableCodes(timesheetsData, jobcodesData) {
-  let nonBillableids = [8690454, 40722896, 36091452]; // zAdmin (Overhead), Internship Program, Leave Without Pay
-  let codes = new Set();
-  _.forEach(timesheetsData, (timesheet) => {
-    let jobcode = getJobcode(timesheet.jobcodeId, jobcodesData);
-    if (!jobcode) jobcode = { id: 0, parentId: 8690454, type: 'regular', name: 'undefined' };
-    if (isNonBillable(jobcode, jobcodesData, nonBillableids)) codes.add(jobcode.name);
-  });
-  return Array.from(codes);
-} // getNonBillableCodes
-
-/**
- * Recursively checks if a jobcode object is non-billable.
- *
- * @param {Object} jobcode - The jobcode object
- * @param {Array} jobcodesData - All jobcodes
- * @param {Array} nonBillableIds - The non-billable IDs
- * @returns Array - The non-billable jobcodes
- */
-function isNonBillable(jobcode, jobcodesData, nonBillableIds) {
-  if (jobcode.parentId === 0) {
-    // base case
-    return nonBillableIds.includes(jobcode.id) || jobcode.type === 'pto';
-  } else {
-    // checks if a jobcode is inside a non billable parent id
-    let parentJobcode = getJobcode(jobcode.parentId, jobcodesData);
-    return nonBillableIds.includes(jobcode.parentId) || isNonBillable(parentJobcode, jobcodesData, nonBillableIds);
+async function getPeriodTimesheets(periods, userId) {
+  // get timesheets and data for all periods
+  let timesheets = [];
+  let supplDatas = [];
+  for (let period of periods) {
+    let { startDate, endDate, title } = period;
+    let { timesheet, supplementalData } = await getTimesheet(startDate, endDate, title, userId);
+    timesheets.push(timesheet);
+    supplDatas.push(supplementalData);
   }
-} // isNonBillable
 
-/**
- * Gets supplemental data like future timesheet hours and days.
- *
- * @param {Array} timesheetsData - The user timesheets within the given time period
- * @param {Array} jobcodesData - All jobcodes
- * @returns Object - The supplemental data
- */
-function getSupplementalData(timesheetsData, jobcodesData) {
-  let days = 0;
-  let futureDuration = 0;
-  let todayDuration = 0;
-  let today = dateUtils.getTodaysDate(dateUtils.DEFAULT_ISOFORMAT);
-  // get timesheets after today
-  let futureTimesheets = _.filter(timesheetsData, (timesheet) => dateUtils.isAfter(timesheet.date, today, 'day'));
-  // get timesheets entered today and get duration
-  let todaysTimesheets = _.filter(timesheetsData, (timesheet) => dateUtils.isSame(timesheet.date, today, 'day'));
-  todayDuration = _.sumBy(todaysTimesheets, (timesheet) => timesheet.duration);
-  // group timesheets by day they were submitted to allow getting amount of future days
-  let groupedFutureTimesheets = _.groupBy(futureTimesheets, ({ date }) =>
-    dateUtils.format(date, null, dateUtils.DEFAULT_ISOFORMAT)
-  );
-  _.forEach(groupedFutureTimesheets, (timesheets, date) => {
-    days += 1;
-    _.forEach(timesheets, (timesheet) => {
-      futureDuration += timesheet.duration;
-    });
-  });
-  let nonBillables = getNonBillableCodes(timesheetsData, jobcodesData);
-  return { today: todayDuration, future: { days, duration: futureDuration }, nonBillables };
-} // getSupplementalData
-
-/**
- * Organizes and returns timesheets grouped by month then by jobcode.
- *
- * @param {Array} timesheetsData - The user timesheets within the given time period
- * @param {Array} jobcodesData - All jobcodes
- * @param {String} startDate - The period start date (in YYYY-MM format)
- * @param {String} endDate - The period end date (in YYYY-MM format)
- * @returns Object - The timesheets grouped by month and year
- */
-function getPeriodTimesheets(timesheetsData, jobcodesData, periods) {
-  let periodTimesheets = [];
-  _.forEach(periods, (p) => {
-    p.timesheets = _.filter(timesheetsData, ({ date }) =>
-      dateUtils.isBetween(date, p.startDate, p.endDate, 'day', '[]')
-    );
-    p.timesheets = _.groupBy(p.timesheets, (timesheet) => getJobcode(timesheet.jobcodeId, jobcodesData)?.name);
-    _.forEach(p.timesheets, (jobcodeTimesheets, jobcodeName) => {
-      // Assign the duration sum of each months jobcode
-      p.timesheets[jobcodeName] = _.reduce(
-        jobcodeTimesheets,
-        (sum, timesheet) => {
-          return (sum += timesheet.duration);
-        },
-        0
-      );
-    });
-    periodTimesheets.push(p);
-  });
-  return periodTimesheets;
+  // combine all supplemental data and return everything
+  let supplementalData = combineSupplementalData(...supplDatas);
+  return { timesheets, supplementalData };
 } // getPeriodTimesheets
 
 /**
- * Gets the jobcode object from the jobcode ID.
+ * Creates a timesheet object for a given period
  *
- * @param {Number} jobcodeId - The jobcode ID
- * @param {Array} jobcodes - The jobcodes
- * @returns Object - The jobcode
+ * @param {Date} startDate Start date (inclusive) of timesheet data
+ * @param {Date} endDate End date (inclusive) of timesheet data
+ * @param {string} title title of the timesheet
+ * @param {string} userId Unanet ID of user
+ * @returns {Promise<{timesheet: Timesheet, supplementalData: Supplement}>} timesheet object between start and end dates
  */
-function getJobcode(jobcodeId, jobcodes) {
-  return _.find(jobcodes, (jobcodeObj) => Number(jobcodeObj.id) === Number(jobcodeId));
-} // getJobcode
+async function getTimesheet(startDate, endDate, title, userId) {
+  // get data from Unanet
+  let monthStart = dateUtils.format(dateUtils.startOf(startDate, 'month'), null, 'YYYY-MM-DD');
+  let basicTimesheets = await getRawTimesheets(monthStart, endDate, userId); // returns monthly blocks
+  let filledTimesheets = await getFullTimesheets(basicTimesheets); // returns monthly blocks with paycodes
 
-/**
- * Gets the user from timesheets API.
- *
- * @param {Number} employeeId
- * @returns Object - The timesheets user object along with their supplemental data
- */
-async function getUser(employeeId) {
-  try {
-    // set options for TSheet API call
-    let options = {
-      method: 'GET',
-      url: 'https://rest.tsheets.com/api/v1/users',
-      params: {
-        employee_numbers: employeeId
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`
+  // helpful vars
+  let today = dateUtils.getTodaysDate();
+  let isToday = (date) => dateUtils.isSame(date, today, 'day');
+  let isFuture = (date) => dateUtils.isAfter(date, today, 'day');
+
+  // vars to fill in
+  /** @type Supplement */
+  let supplementalData = {};
+  /** @type Set<string> */
+  let nonBillables = new Set();
+
+  /** @type Timesheet */
+  let timesheet = { startDate, endDate, title, timesheets: {} };
+
+  // loop through each month returned from Unanet API
+  for (let month of filledTimesheets) {
+    // loop through 'timeslips' (there's one per labor category per day) and tally up for each job code
+    for (let slip of month.timeslips) {
+      // skip slips that are past the end date or before the start date
+      let beforeStart = dateUtils.isBefore(slip.workDate, startDate, 'day');
+      let afterEnd = dateUtils.isAfter(slip.workDate, endDate, 'day');
+      if (beforeStart || afterEnd) continue;
+
+      // add the hours worked for the project
+      let jobCode = getProjectName(slip.project.name);
+      timesheet.timesheets[jobCode] ??= 0;
+      timesheet.timesheets[jobCode] += hoursToSeconds(Number(slip.hoursWorked));
+
+      // add bill code to non-billables if it is not marked as billable
+      if (!BILLABLE_CODES.includes(slip.projectType.name)) {
+        nonBillables.add(jobCode);
       }
-    };
 
-    // request data from TSheet API
-    let userRequest = await axios(options);
-    let userObject = userRequest.data.results.users;
-    if (userObject?.length === 0) throw { status: 400, message: 'Invalid employee number' };
-    let supplementalObject = userRequest.data.supplemental_data;
-    // attach supplemental data to the user object (this contains PTO data)
-    let user = _.merge(userObject, supplementalObject);
-    return Promise.resolve(user);
-  } catch (err) {
-    return Promise.reject(err);
+      // if this slip is for today, add it to supplementalData
+      if (isToday(slip.workDate)) {
+        supplementalData.today ??= 0;
+        supplementalData.today += hoursToSeconds(Number(slip.hoursWorked));
+      }
+
+      // if this slip is for the future, add it to supplementalData
+      if (isFuture(slip.workDate)) {
+        supplementalData.future ??= { raw: {} }
+        supplementalData.future.raw[slip.workDate] ??= 0;
+        supplementalData.future.raw[slip.workDate] += hoursToSeconds(Number(slip.hoursWorked));
+      }
+    }
   }
-} // getUser
+
+  // add seen non-billables to supplementalData
+  supplementalData.nonBillables = Array.from(nonBillables);
+
+  // give back finished result
+  return { timesheet, supplementalData };
+} // getTimesheet
 
 /**
- * Gets the user's timesheets within a given time period.
+ * Gets a user's PTO balances
  *
- * @param {String} startDate - The period start date
- * @param {String} endDate - The period end date
- * @param {Number} userId - The QuickBooks user ID
- * @returns Array - All user timesheets within the given time period
+ * @param unanetId Unanet ID of user
+ * @param portalNumber employeeNumber from portal
+ * @param timesheets user's timesheets
+ * @return {Promise<{
+ *   ptoBalances: PtoData,
+ *   supplementalData: {
+ *     accrualsUpdated: Date
+ *   }
+ * }>} PTO balances and supplemental data
  */
-async function getTimesheets(startDate, endDate, userId) {
+async function getPtoBalances(portalNumber) {
+  const { accruals, accrualsUpdated } = await getAccruals();
+  return { ptoBalances: accruals[portalNumber], supplementalData: { accrualsUpdated, planableKeys: PLANABLE_KEYS } };
+} // getPtoBalances
+
+// |----------------------------------------------------|
+// |                                                    |
+// |                  AWS CONNECTIONS                   |
+// |                                                    |
+// |----------------------------------------------------|
+
+/**
+ * Gets a specific employee attribute from the database
+ * Usage eg: const { id, email } = await getEmployeeAttrFromDb(10001, 'id', 'email');
+ *
+ * @template {string[]} T
+ * @param {number} employeeNumber employee to retrieve data for
+ * @param {T} attrs attributes to fetch
+ * @return {Promise<{ [K in T[number]]: any }>} An object with keys matching attrs
+ */
+async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
+  // build command
+  const TableName = `${STAGE}-employees`;
+  const scanCommand = new ScanCommand({
+    ProjectionExpression: attrs.join(','),
+    FilterExpression: 'employeeNumber = :n',
+    ExpressionAttributeValues: { ':n': Number(employeeNumber) },
+    TableName
+  });
+
+  // send command
+  resp = await docClient.send(scanCommand);
+
+  // throw error or return object
+  if (resp.Count !== 1)
+    throw new Error(`Could not distinguish Portal employee ${employeeNumber} (${resp.Count} options).`);
+  return resp.Items[0];
+} // getEmployeeAttrFromDb
+
+/**
+ * Returns the Unanet Accruals information as a JSON object, along with the date it was last updated.
+ *
+ * @returns {Promise<{ accruals: PtoMap, accrualsUpdated: Date }>}
+ *          - accruals - Maps employee number to pto data
+ *          - accrualsUpdated - the date the accrual data was uploaded
+ */
+async function getAccruals() {
+  // build command to send S3
+  const s3Client = new S3Client({});
+  const params = {
+    Bucket: ACCRUALS_BUCKET,
+    Key: ACCRUALS_KEY
+  };
+
+  // get file metadata
+  const headCommand = new HeadObjectCommand(params);
+  await s3Client
+    .send(headCommand)
+    .then(async (headObjectData) => {
+      accrualsUpdated = headObjectData.LastModified;
+    })
+    .catch((err) => {
+      if (err.name == 'NotFound') {
+        // s3 object does not exist
+        const wrappedError = new Error(
+          `Could not find PTO file in S3. Bucket: ${ACCRUALS_BUCKET}, Key: ${ACCRUALS_KEY}`,
+          {
+            cause: err
+          }
+        );
+        wrappedError.code = 'ERR_S3_NOT_FOUND';
+        throw wrappedError;
+      }
+      throw new Error(err.message);
+    });
+  accrualsUpdated = dateUtils.subtract(accrualsUpdated, 4, 'h');
+
+  // get file data
+  let accrualsUrl;
+  const objCommand = new GetObjectCommand(params);
+  await getSignedUrl(s3Client, objCommand, { expiresIn: 60 })
+    .then((urlData) => {
+      accrualsUrl = urlData;
+    })
+    .catch((err) => {
+      throw new Error(err.message);
+    });
+
+  const resp = await axios.get(accrualsUrl);
+  return {
+    accruals: resp.data,
+    accrualsUpdated
+  };
+} // getAccruals
+
+/**
+ * Updates a user's personKey in DynamoDB for future use
+ *
+ * @param {number} employeeNumber user's portal employee number
+ * @param {string} personKey from Unanet to add to user's profile
+ */
+async function updateUserPersonKey(employeeNumber, personKey) {
+  // common table for both commands
+  const TableName = `${STAGE}-employees`;
+
+  // find the user's ID
+  const { id } = await getEmployeeAttrFromDb(employeeNumber, 'id');
+
+  // use their ID to update the personKey
+  const updateCommand = new UpdateCommand({
+    TableName,
+    Key: { id },
+    UpdateExpression: `set unanetPersonKey = :k`,
+    ExpressionAttributeValues: { ':k': `${personKey}` }
+  });
+  await docClient.send(updateCommand);
+} // updateUserPersonKey
+
+// |----------------------------------------------------|
+// |                                                    |
+// |                  API CONNECTIONS                   |
+// |                                                    |
+// |----------------------------------------------------|
+
+/**
+ * Returns an auth token for the API account
+ *
+ * @returns {Promise<string>} the auth token
+ */
+async function getAccessToken() {
+  // get login info from parameter store
+  let { username, password } = JSON.parse(await getSecret('/Unanet/login'));
+  if (!username || !password) throw new Error('Could not get login info from parameter store.');
+
+  // build options to log in with user/pass from parameter store
+  let options = {
+    method: 'POST',
+    url: BASE_URL + '/rest/login',
+    data: { username, password }
+  };
+
+  // request and return token from Unanet API
   try {
-    let promises = [];
-    let timesheets = [];
-    let jobcodes = [];
-    // get date batches that span 2 months (start of month to the end of the next month) to run in parallel
-    let dateBatches = getTimesheetDateBatches(startDate, endDate);
-    _.forEach(dateBatches, (dateBatch) => {
-      // set options for TSheet API call
-      let options = {
-        method: 'GET',
-        url: 'https://rest.tsheets.com/api/v1/timesheets',
-        params: {
-          start_date: dateUtils.format(dateBatch.startDate, null, dateUtils.DEFAULT_ISOFORMAT),
-          end_date: dateUtils.format(dateBatch.endDate, null, dateUtils.DEFAULT_ISOFORMAT),
-          user_ids: userId
-        },
-        headers: {
-          Authorization: `Bearer ${accessToken}`
-        }
-      };
-      // request data from TSheet API
-      promises.push(axios(options));
-    });
-    let timesheetResponses = await Promise.all(promises);
-    // organize results into an array of data that is only needed
-    _.forEach(timesheetResponses, (timesheetResponse) => {
-      _.forEach(timesheetResponse.data.results.timesheets, (ts) => {
-        timesheets.push({
-          id: ts.id,
-          userId: ts.user_id,
-          jobcodeId: ts.jobcode_id,
-          duration: ts.duration,
-          date: ts.date
-        });
-      });
-      let jobcodesObj = timesheetResponse.data?.supplemental_data?.jobcodes;
-      let arr = _.map(jobcodesObj, (value, key) => {
-        return { id: value.id, parentId: value.parent_id, type: value.type, name: value.name };
-      });
-      jobcodes = [...jobcodes, ...arr];
-    });
-    return Promise.resolve({ timesheets, jobcodes });
+    let resp = await axios(options);
+    return resp.data.token;
   } catch (err) {
-    return Promise.reject(err);
+    throw new Error(`Login to Unanet failed: ${err.message}`);
   }
-} // getTimesheets
+} // getAccessToken
+
+/**
+ * Gets a user's key from Unanet API based on Portal employeeNumber
+ *
+ * @param {number} employeeNumber Portal Employee Number
+ * @returns {Promise<string>} Unanet personKey
+ */
+async function getUnanetPersonKey(employeeNumber) {
+  // build options to find employee based on employeeNumber
+  let options = {
+    method: 'POST',
+    url: BASE_URL + '/rest/people/search',
+    data: {
+      idCode1: employeeNumber
+    },
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
+
+  // request data from Unanet API
+  let resp = await axios(options);
+
+  // pull out the employee's key
+  if (resp.data?.items?.length !== 1)
+    throw new Error(`Could not distinguish Unanet employee ${employeeNumber} (${resp.data.length} options).`);
+  let personKey = resp.data.items[0].key;
+
+  // update user's DynamoDB object and return for usage now
+  await updateUserPersonKey(employeeNumber, personKey);
+  return personKey;
+} // getUnanetPersonKey
+
+/**
+ * Gets the user's timesheets within a given time period
+ *
+ * @param {Date} startDate - The period start date
+ * @param {Date} endDate - The period end date
+ * @param {string} userId - The unanet personKey
+ * @returns {Promise<any[]>} Array of all user timesheets within the given time period
+ */
+async function getRawTimesheets(startDate, endDate, userId) {
+  // build options to search for user's time within the start and end dates
+  let options = {
+    method: 'POST',
+    url: BASE_URL + '/rest/time/search',
+    data: {
+      personKeys: [userId],
+      beginDateStart: startDate,
+      beginDateEnd: endDate
+    },
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
+
+  // get response
+  let resp = await axios(options);
+  filtered = filterTimesheets(resp.data.items);
+  return filtered;
+} // getRawTimesheets
+
+/**
+ * Fills the timesheets with jobcode data
+ *
+ * @param timesheets timesheets from getRawTimesheets
+ * @returns timesheets with jobcode data added
+ */
+async function getFullTimesheets(timesheets) {
+  // build and run promises all at once
+  let promises = [];
+  let headers = { Authorization: `Bearer ${accessToken}` };
+  for (let timesheet of timesheets) promises.push(axios.get(BASE_URL + `/rest/time/${timesheet.key}`, { headers }));
+  let resp = await Promise.all(promises);
+
+  // pull out response data and return it all together
+  let filledTimesheets = resp.map((res) => res.data);
+  return filledTimesheets;
+} // getFullTimesheets
+
+// |----------------------------------------------------|
+// |                                                    |
+// |                       HELPERS                      |
+// |                                                    |
+// |----------------------------------------------------|
+
+/**
+ * Gets the project name, without any decimals or numbers
+ * Eg. converts "9876.54.32.PROJECT.OY1" to "PROJECT OY1"
+ *
+ * @param {string} projectName Name of the project, for converting
+ * @returns {string} More human-friendly project name for Portal
+ */
+function getProjectName(projectName) {
+  // split up each part and remove any parts that are all digits
+  let parts = projectName.split('.');
+
+  // remove part if it's just numbers. '\D' is any non-number character
+  parts.filter((value) => /\D/.test(value));
+
+  // return leftover parts and replace any number of spaces/underscores with a single space
+  return parts.join(' ').replaceAll(/[ _]+/g, ' ').trim();
+} // getProjectName
+
+/**
+ * Combines any number of supplemental data objects
+ *
+ * @param supps the supplemental data objects
+ * @returns {Supplement} combined supplementalData object
+ */
+function combineSupplementalData(...supps) {
+  // base default to make sure everything has at least some data
+  /** @type Supplement */
+  let combined = { today: 0, future: { days: new Set(), duration: 0 }, nonBillables: [], planableKeys: {} };
+
+  // loop through all supplemental data and combine it
+  for (let supp of supps) {
+    if (!supp) continue; // avoid error if it's undefined
+    combined.today += supp.today ?? 0;
+    combined.nonBillables = [...new Set([...combined.nonBillables, ...(supp.nonBillables ?? [])])];
+    combined.planableKeys = { ...combined.planableKeys, ...(supp.planableKeys ?? {}) };
+    combined.future.raw = { ...combined.future.raw, ...(supp.future?.raw ?? {}) }
+  }
+
+  return combined;
+} // combineSupplementalData
+
+/**
+ * Last-second conversions of supplemental data before returning it. Do not use this anywhere
+ * other than a last-second conversion of data before returning the handler.
+ * 
+ * Currently does the following:
+ *  - Converts future days raw to days and duration
+ * 
+ * @param data the supplemental data object to update
+ */
+function processSupplementalData(data) {
+  if (data.future?.raw) {
+    let durations = Object.values(data.future.raw);
+    console.log(durations);
+    data.future = {
+      days: durations.length,
+      duration: durations.reduce((acc, curr) => acc + curr, 0)
+    }
+  }
+} // processSupplementalData
+
+
+/**
+ * Filters timesheets based on eventOptions
+ *
+ * @param timesheets to filter
+ * @returns filtered timesheets object
+ */
+function filterTimesheets(timesheets) {
+  let filtered = timesheets;
+
+  // filter for status
+  if (eventOptions.status) {
+    let status = eventOptions.status;
+    if (!Array.isArray(status)) status = [status];
+    filtered = filtered.filter((timesheet) => status.includes(timesheet.status));
+  }
+
+  // return filtered timesheets
+  return filtered;
+} // filterTimesheets
+
+/**
+ * Helper to seralize an error
+ *
+ * @param err the error to seralized
+ * @returns object of serialized data for printing/returning
+ */
+function serializeError(err) {
+  if (!err) return null;
+  if (typeof err === 'string') return err;
+  return {
+    name: err.name ?? null,
+    message: err.message ?? null,
+    stack: err.stack ?? null
+  };
+} // serializeError
+
+/**
+ * Helper to redact data from a string
+ *
+ * @param {string} str string to redact
+ * @param {number} start how many characters to keep on the start
+ * @param {number} end how many characters to keep on the end
+ * @param {string} fill (optional) characters to fill in place of redacted data
+ * @returns {string} The redacted string
+ */
+function redact(str, start, end, fill = '***') {
+  if ([str, start, end, fill].some((v) => v == null)) return null;
+  return str.slice(0, start) + fill + str.slice(-end);
+} // redact
+
+/**
+ * Builds an object to use in Promise rejections based on whether
+ * or not Unanet is down, or if it was the code that errored.
+ *
+ * @param err Error object
+ * @returns object to use for Promise.reject()
+ */
+async function handleError(err) {
+  // make sure the error function doesn't error
+  err ??= new Error('Unknown error occurred.');
+
+  // body to return either way
+  let body = {
+    stage: STAGE ?? null,
+    url: BASE_URL ?? null,
+    api_key: redact(accessToken, 8, 8),
+    err: serializeError(err)
+  };
+
+  // return codes based on result of ping
+  let ping = await axios.get(BASE_URL + '/rest/ping');
+  if (ping?.status < 300 && ping?.status >= 200) {
+    // Unanet is up
+    return {
+      status: 500,
+      message: err.message,
+      code: err.code,
+      body
+    };
+  } else {
+    // Unanet is down
+    return {
+      status: 503,
+      message: 'Unanet API failed to respond.',
+      code: 'ERR_UNANET_DOWN',
+      body
+    };
+  }
+} // handleError
+
+// |----------------------------------------------------|
+// |                                                    |
+// |                        EXPORT                      |
+// |                                                    |
+// |----------------------------------------------------|
 
 module.exports = {
   handler
