@@ -39,7 +39,7 @@
     "@aws-sdk/client-ssm": "3.864.0",
     "@aws-sdk/lib-dynamodb": "3.868.0",
     "@aws-sdk/s3-request-presigner": "3.864.0",
-    "axios": "1.11.0",
+    "axios": "1.12.0",
     "dayjs": "1.11.13",
     "lodash": "4.17.21",
     "qs": "6.14.0",
