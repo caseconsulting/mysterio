@@ -87,6 +87,7 @@ async function handler(event) {
     }
 
     let supplementalData = combineSupplementalData(timeSupp, ptoSupp);
+    processSupplementalData(supplementalData);
     body = { system: 'Unanet', timesheets, ptoBalances, supplementalData };
 
     // return everything together
@@ -158,7 +159,7 @@ async function getTimesheet(startDate, endDate, title, userId) {
       if (beforeStart || afterEnd) continue;
 
       // add the hours worked for the project
-      let jobCode = getProjectName(slip.project.name);
+      let jobCode = getProjectName(slip);
       timesheet.timesheets[jobCode] ??= 0;
       timesheet.timesheets[jobCode] += hoursToSeconds(Number(slip.hoursWorked));
 
@@ -175,9 +176,9 @@ async function getTimesheet(startDate, endDate, title, userId) {
 
       // if this slip is for the future, add it to supplementalData
       if (isFuture(slip.workDate)) {
-        supplementalData.future ??= { days: 0, duration: 0 };
-        supplementalData.future.days += 1;
-        supplementalData.future.duration += hoursToSeconds(Number(slip.hoursWorked));
+        supplementalData.future ??= { raw: {} }
+        supplementalData.future.raw[slip.workDate] ??= 0;
+        supplementalData.future.raw[slip.workDate] += hoursToSeconds(Number(slip.hoursWorked));
       }
     }
   }
@@ -437,18 +438,30 @@ async function getFullTimesheets(timesheets) {
  * Gets the project name, without any decimals or numbers
  * Eg. converts "9876.54.32.PROJECT.OY1" to "PROJECT OY1"
  *
- * @param {string} projectName Name of the project, for converting
+ * @param {string} slip The timeslip object
  * @returns {string} More human-friendly project name for Portal
  */
-function getProjectName(projectName) {
-  // split up each part and remove any parts that are all digits
-  let parts = projectName.split('.');
+function getProjectName(slip) {
+  let projectName = slip.project?.name;
+  let taskName = slip.task?.name;
+  let spacesRegex = /[ _]+/g; // regex to match spaces and underscores
+  
+  // get project name: filter out all numeric parts and keep the rest
+  let projectSplit = projectName.split('.');
+  let project = projectSplit.filter((value) => /\D/.test(value)); // '\D' is any non-number character
+  project = project.join(' ');
+  project = project?.replace(spacesRegex, ' '); // trim spaces/underscores
 
-  // remove part if it's just numbers. '\D' is any non-number character
-  parts.filter((value) => /\D/.test(value));
+  // task name often has duplicate information separated by a dash, and
+  // duplicate option year text; remove both
+  let task = taskName;
+  if (task?.includes(' - ')) task = task.split(' - ')[1];
+  task = task?.replace(/OY[0-9]/g, '');
+  task = task?.replace(spacesRegex, ' '); // trim spaces/underscores
 
-  // return leftover parts and replace any number of spaces/underscores with a single space
-  return parts.join(' ').replaceAll(/[ _]+/g, ' ').trim();
+  // return with task name if it exists
+  if (!task) return project;
+  else return `${project} - ${task}`;
 } // getProjectName
 
 /**
@@ -460,7 +473,7 @@ function getProjectName(projectName) {
 function combineSupplementalData(...supps) {
   // base default to make sure everything has at least some data
   /** @type Supplement */
-  let combined = { today: 0, future: { days: 0, duration: 0 }, nonBillables: [], planableKeys: {} };
+  let combined = { today: 0, future: { days: new Set(), duration: 0 }, nonBillables: [], planableKeys: {} };
 
   // loop through all supplemental data and combine it
   for (let supp of supps) {
@@ -468,12 +481,32 @@ function combineSupplementalData(...supps) {
     combined.today += supp.today ?? 0;
     combined.nonBillables = [...new Set([...combined.nonBillables, ...(supp.nonBillables ?? [])])];
     combined.planableKeys = { ...combined.planableKeys, ...(supp.planableKeys ?? {}) };
-    combined.future.days += supp.future?.days ?? 0;
-    combined.future.duration += supp.future?.duration ?? 0;
+    combined.future.raw = { ...combined.future.raw, ...(supp.future?.raw ?? {}) }
   }
 
   return combined;
 } // combineSupplementalData
+
+/**
+ * Last-second conversions of supplemental data before returning it. Do not use this anywhere
+ * other than a last-second conversion of data before returning the handler.
+ * 
+ * Currently does the following:
+ *  - Converts future days raw to days and duration
+ * 
+ * @param data the supplemental data object to update
+ */
+function processSupplementalData(data) {
+  if (data.future?.raw) {
+    let durations = Object.values(data.future.raw);
+    console.log(durations);
+    data.future = {
+      days: durations.length,
+      duration: durations.reduce((acc, curr) => acc + curr, 0)
+    }
+  }
+} // processSupplementalData
+
 
 /**
  * Filters timesheets based on eventOptions
