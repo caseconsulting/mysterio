@@ -153,6 +153,10 @@ async function getTimesheet(startDate, endDate, title, userId) {
   for (let month of filledTimesheets) {
     // loop through 'timeslips' (there's one per labor category per day) and tally up for each job code
     for (let slip of month.timeslips) {
+      // skip if there's no hours
+      let hoursWorked = hoursToSeconds(Number(slip.hoursWorked));
+      if (hoursWorked === 0) continue;
+
       // skip slips that are past the end date or before the start date
       let beforeStart = dateUtils.isBefore(slip.workDate, startDate, 'day');
       let afterEnd = dateUtils.isAfter(slip.workDate, endDate, 'day');
@@ -161,7 +165,7 @@ async function getTimesheet(startDate, endDate, title, userId) {
       // add the hours worked for the project
       let jobCode = getProjectName(slip);
       timesheet.timesheets[jobCode] ??= 0;
-      timesheet.timesheets[jobCode] += hoursToSeconds(Number(slip.hoursWorked));
+      timesheet.timesheets[jobCode] += hoursWorked;
 
       // add bill code to non-billables if it is not marked as billable
       if (!BILLABLE_CODES.includes(slip.projectType.name)) {
@@ -171,14 +175,14 @@ async function getTimesheet(startDate, endDate, title, userId) {
       // if this slip is for today, add it to supplementalData
       if (isToday(slip.workDate)) {
         supplementalData.today ??= 0;
-        supplementalData.today += hoursToSeconds(Number(slip.hoursWorked));
+        supplementalData.today += hoursWorked;
       }
 
       // if this slip is for the future, add it to supplementalData
       if (isFuture(slip.workDate)) {
         supplementalData.future ??= { raw: {} }
         supplementalData.future.raw[slip.workDate] ??= 0;
-        supplementalData.future.raw[slip.workDate] += hoursToSeconds(Number(slip.hoursWorked));
+        supplementalData.future.raw[slip.workDate] += hoursWorked;
       }
     }
   }
@@ -499,7 +503,6 @@ function combineSupplementalData(...supps) {
 function processSupplementalData(data) {
   if (data.future?.raw) {
     let durations = Object.values(data.future.raw);
-    console.log(durations);
     data.future = {
       days: durations.length,
       duration: durations.reduce((acc, curr) => acc + curr, 0)
