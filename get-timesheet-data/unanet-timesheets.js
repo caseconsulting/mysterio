@@ -1,22 +1,20 @@
 /**
  *
- * Unanet Swagger API: https://consultwithcase-sand.unanet.biz/platform/swagger/
+ * Unanet API reference: https://consultwithcase-sand.unanet.biz/platform/swagger/
  * 
  * Details about rate limiting:
  * Unanet will start rate limiting, but the process begins with contacting us. If they suspect
  * we're abusing their API then they will ask if we should get a higher plan or reduce our calls.
  * Exact numbers that would look suspicious are unknown.
+ * 
+ * Todo:
+ * - [ ] Warehouse API data from previous months (only get the last 2 months via API)
+ * - [ ] Find ways to limit API calls and be more efficient to avoid potential rate limiting
+ * - [ ] Make efficient calls for multiple users (will be doing entire company at some point)
  *
  */
 
 // types
-/**
- * @typedef {{ startDate: Date, endDate: Date, title: string, timesheets: { [jobCode: string]: number; } }} Timesheet
- * @typedef {{ today: number, future: { days: number, duration: number }, nonBillables: string[] }} Supplement
- * @typedef {'PTO' | 'CASE_CARES' | 'CASE_CONNECTIONS' | 'HOLIDAY' | 'TRAINING_TUITION'} PtoCode
- * @typedef {Record<PtoCode, { actuals: number, balance: number }} PtoData Maps a pto code to categorized hours
- * @typedef {Record<number, PtoData>} PtoMap Maps employee number to PtoData
- */
 
 // utils
 const axios = require('axios');
@@ -41,14 +39,6 @@ const dbClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dbClient);
 
 /**
- * To do:
- * - [ ] Warehouse API data from previous months (only get the last 2 months via API)
- * - [ ] Find ways to limit API calls and be more efficient to avoid potential rate limiting
- * - [ ] Make efficient calls for multiple users (will be doing entire company at some point)
- * - [ ] Input validation
- */
-
-/**
  * Handler for Unanet timesheet data
  *
  * @param event - The lambda event
@@ -64,13 +54,14 @@ async function handler(event) {
     accessToken = await getAccessToken();
     unanetPersonKey ??= await getUnanetPersonKey(employeeNumber);
 
-    // build the return body
+    // get data from Unanet
     let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, unanetPersonKey);
-    let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(unanetPersonKey);
+    let { leaveBalances, supplementalData: leaveSupp } = await getLeaveBalances(unanetPersonKey);
 
-    let supplementalData = combineSupplementalData(timeSupp, ptoSupp);
+    // build the return body
+    let supplementalData = combineSupplementalData(timeSupp, leaveSupp);
     processSupplementalData(supplementalData);
-    body = { system: 'Unanet', timesheets, ptoBalances, supplementalData };
+    body = { system: 'Unanet', timesheets, leaveBalances, supplementalData };
 
     // return everything together
     return { status: 200, body };
@@ -341,12 +332,12 @@ async function getFullTimesheets(timesheets) {
 }
 
 /**
- * Gets a user's PTO balances
+ * Gets a user's leave balances
  *
  * @param userId Unanet ID of user
- * @return 
+ * @returns leave balances object and supplemental data
  */
-async function getPtoBalances(userId) {
+async function getLeaveBalances(userId) {
   // base variables
   const today = dateUtils.getTodaysDate('YYYY-MM-DD');
   const yearStart = dateUtils.format(dateUtils.startOf(today, 'year'), null, 'YYYY-MM-DD');
@@ -372,27 +363,27 @@ async function getPtoBalances(userId) {
   const promises = [axios(amountOptions), axios(actualsOptions)];
   const [amounts, actuals] = await Promise.all(promises);
 
-  // build base PTO balances, and mappings of code -> name
-  let ptoMappings = {};
-  let ptoBalances = {};
+  // build base leave balances, and mappings of code -> name
+  let leaveMappings = {};
+  let leaveBalances = {};
   for (let item of amounts.data.items) {
     let { code, name } = item.project;
-    ptoMappings[code] = name;
-    ptoBalances[code] = hoursToSeconds(item.budget);
+    leaveMappings[code] = name;
+    leaveBalances[code] = hoursToSeconds(item.budget);
   }
 
-  // remove actuals from PTO balances
+  // remove actuals from leave balances
   for (let item of actuals.data.items) {
     let code = item.project.code;
-    if (!ptoBalances[code]) continue;
-    ptoBalances[code] -= hoursToSeconds(item.actuals);
-    ptoBalances[code] = round(ptoBalances[code]);
+    if (!leaveBalances[code]) continue;
+    leaveBalances[code] -= hoursToSeconds(item.actuals);
+    leaveBalances[code] = round(leaveBalances[code]);
   }
 
   return { 
-    ptoBalances,
+    leaveBalances,
     supplementalData: {
-      ptoMappings,
+      leaveMappings,
       planableKeys: PLANABLE_KEYS
     }
   };
@@ -443,14 +434,14 @@ function getProjectName(slip) {
 function combineSupplementalData(...supps) {
   // base default to make sure everything has at least some data
   /** @type Supplement */
-  let combined = { today: 0, future: { days: new Set(), duration: 0 }, nonBillables: [], ptoMappings: {}, planableKeys: {} };
+  let combined = { today: 0, future: { days: new Set(), duration: 0 }, nonBillables: [], leaveMappings: {}, planableKeys: {} };
 
   // loop through all supplemental data and combine it
   for (let supp of supps) {
     if (!supp) continue; // avoid error if it's undefined
     combined.today += supp.today ?? 0;
     combined.nonBillables = [...new Set([...combined.nonBillables, ...(supp.nonBillables ?? [])])];
-    combined.ptoMappings = { ...combined.ptoMappings, ...(supp.ptoMappings ?? {}) };
+    combined.leaveMappings = { ...combined.leaveMappings, ...(supp.leaveMappings ?? {}) };
     combined.planableKeys = { ...combined.planableKeys, ...(supp.planableKeys ?? {}) };
     combined.future.raw = { ...combined.future.raw, ...(supp.future?.raw ?? {}) }
   }
