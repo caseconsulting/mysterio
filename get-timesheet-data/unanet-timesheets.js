@@ -9,7 +9,6 @@
  * 
  * Todo:
  * - [ ] Warehouse API data from previous months (only get the last 2 months via API)
- * - [ ] Find ways to limit API calls and be more efficient to avoid potential rate limiting
  * - [ ] Make efficient calls for multiple users (will be doing entire company at some point)
  *
  */
@@ -49,14 +48,15 @@ async function handler(event) {
     // pull out vars from the event
     let { periods, employeeNumber, unanetPersonKey, options } = event;
     eventOptions = options ?? {};
-
+    
     // log in to Unanet
     accessToken = await getAccessToken();
     unanetPersonKey ??= await getUnanetPersonKey(employeeNumber);
-
+    
     // get data from Unanet
-    let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, unanetPersonKey);
-    let { leaveBalances, supplementalData: leaveSupp } = await getLeaveBalances(unanetPersonKey);
+    const [ timeResults, leaveResults ] = await getUnanetData(periods, unanetPersonKey);
+    const { timesheets, supplementalData: timeSupp }  = timeResults;
+    const { leaveBalances, supplementalData: leaveSupp } = leaveResults;
 
     // build the return body
     let supplementalData = combineSupplementalData(timeSupp, leaveSupp);
@@ -68,6 +68,20 @@ async function handler(event) {
   } catch (err) {
     return await handleError(err);
   }
+}
+
+/**
+ * Quick helper to get timesheet and leave balances. Really just makes the handler
+ * look prettier.
+ * 
+ * @param periods time periods from event
+ * @param unanetPersonKey userId from Unanet of person to get data for
+ */
+async function getUnanetData(periods, unanetPersonKey) {
+  return await Promise.all([
+    getPeriodTimesheets(periods, unanetPersonKey),
+    getLeaveBalances(unanetPersonKey),
+  ]);
 }
 
 /**
