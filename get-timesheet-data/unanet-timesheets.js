@@ -32,7 +32,6 @@ const STAGE = process.env.STAGE;
 const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
 const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
 const BILLABLE_CODES = ['BILL_SVCS'];
-const ACCRUAL_HEADERS = new Set(['CASE_CARES', 'CASE_CONNECTIONS', 'HOLIDAY', 'PTO', 'TRAINING_TUITION']);
 const PLANABLE_KEYS = { PTO: 'PTO', Holiday: 'HOLIDAY' };
 
 // DynamoDB
@@ -40,12 +39,6 @@ const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const dbClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dbClient);
-
-// S3
-const { S3Client, HeadObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
-const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const ACCRUALS_BUCKET = `case-expense-app-unanet-data-${STAGE}`;
-const ACCRUALS_KEY = 'accruals.json';
 
 /**
  * To do:
