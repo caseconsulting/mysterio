@@ -33,12 +33,12 @@
     "npm": ">=10.5.0"
   },
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "3.906.0",
-    "@aws-sdk/client-lambda": "3.906.0",
-    "@aws-sdk/client-sns": "3.906.0",
-    "@aws-sdk/client-ssm": "3.906.0",
-    "@aws-sdk/lib-dynamodb": "3.906.0",
-    "@aws-sdk/s3-request-presigner": "3.906.0",
+    "@aws-sdk/client-dynamodb": "3.911.0",
+    "@aws-sdk/client-lambda": "3.911.0",
+    "@aws-sdk/client-sns": "3.911.0",
+    "@aws-sdk/client-ssm": "3.912.0",
+    "@aws-sdk/lib-dynamodb": "3.911.0",
+    "@aws-sdk/s3-request-presigner": "3.911.0",
     "axios": "1.12.2",
     "dayjs": "1.11.18",
     "lodash": "4.17.21",
