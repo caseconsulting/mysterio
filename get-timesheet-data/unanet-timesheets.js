@@ -61,7 +61,7 @@ async function handler(event) {
     // build the return body
     let supplementalData = combineSupplementalData(timeSupp, leaveSupp);
     processSupplementalData(supplementalData);
-    body = { system: 'Unanet', timesheets, leaveBalances, supplementalData };
+    body = { system: 'Unanet', leaveBalances, timesheets, supplementalData };
 
     // return everything together
     return { status: 200, body };
@@ -179,6 +179,73 @@ async function getTimesheet(startDate, endDate, title, userId) {
 
   // give back finished result
   return { timesheet, supplementalData };
+}
+
+/**
+ * Gets current leave balances for a user
+ * 
+ * @param userId Unanet ID of user
+ * @returns {Promise<{leaveBalances: LeaveBalance, supplementalData: Supplement}>} leave balances and supplemental data
+ */
+async function getLeaveBalances(userId) {
+  // base variables
+  const today = dateUtils.getTodaysDate('YYYY-MM-DD');
+  const monthStart = dateUtils.format(dateUtils.startOf(today, 'month'), null, 'YYYY-MM-DD');
+  let yearStart = dateUtils.format(dateUtils.startOf(today, 'year'), null, 'YYYY-MM-DD');
+  if (dateUtils.isSame(today, '2025-08-01', 'year')) yearStart = '2025-08-01'; // TODO: remove in 2026 and make yearStart a const
+  const yearEnd = dateUtils.format(dateUtils.endOf(today, 'year'), null, 'YYYY-MM-DD');
+  let round = (n) => (Math.round(n * 1000) / 1000);
+
+  // Get basic leave data
+  let basicLeave = getLeaveData(userId, yearStart, yearEnd);
+  let actuals = getLeaveData(userId, monthStart, today);
+  [basicLeave, actuals] = await Promise.all([basicLeave, actuals]);
+
+  // find oddball dates and refetch those ones
+  let oddballPromises = [];
+  let oddballCodes = [];
+  const EOT = '2099-12-31';
+  for (let item of basicLeave.items) {
+    if (item.beginDate !== yearStart || (item.endDate !== yearEnd && item.endDate !== EOT)) {
+      oddballPromises.push(getLeaveData(userId, item.beginDate, item.endDate));
+      oddballCodes.push(item.project.code);
+    }
+  }
+  let oddballLeave = await Promise.all(oddballPromises);
+
+  // map oddballs for easy access
+  let oddballMap = {};
+  for (let i = 0; i < oddballCodes.length; i++){
+    let code = oddballCodes[i];
+    oddballMap[code] = oddballLeave[i].items.find((l) => l.project.code === code);
+  }
+
+  let leaveMappings = {};
+  let leaveBalances = {};
+
+  // set initial balances
+  for (let item of basicLeave.items) {
+    let { code, name } = item.project;
+    let balance = oddballMap[code]?.budget ?? item.budget;
+    leaveMappings[code] = name;
+    leaveBalances[code] = hoursToSeconds(balance);
+  }
+
+  // factor in actuals
+  for (let item of actuals.items) {
+    let { code } = item.project;
+    leaveBalances[code] -= hoursToSeconds(item.actuals);
+    leaveBalances[code] = round(leaveBalances[code]);
+  }
+
+  // return data in object
+  return { 
+    leaveBalances,
+    supplementalData: {
+      leaveMappings,
+      planableKeys: PLANABLE_KEYS
+    }
+  };
 }
 
 // |----------------------------------------------------|
@@ -346,61 +413,24 @@ async function getFullTimesheets(timesheets) {
 }
 
 /**
- * Gets a user's leave balances
+ * Gets leave balance report from Unanet
  *
  * @param userId Unanet ID of user
+ * @param startDate start date of period to look for
+ * @param endDate end date of period to look for
  * @returns leave balances object and supplemental data
  */
-async function getLeaveBalances(userId) {
-  // base variables
-  const today = dateUtils.getTodaysDate('YYYY-MM-DD');
-  const yearStart = dateUtils.format(dateUtils.startOf(today, 'year'), null, 'YYYY-MM-DD');
-  const yearEnd = dateUtils.format(dateUtils.endOf(today, 'year'), null, 'YYYY-MM-DD');
-  const baseOptions = {
+async function getLeaveData(userId, startDate, endDate) {
+  const options = {
     method: 'POST',
     url: `${BASE_URL}/rest/people/${userId}/leave`,
+    data: {
+      dateRange: { rangeStart: startDate, rangeEnd: endDate }
+    },
     headers: { 'Authorization': `Bearer ${accessToken}` }
   };
-  let round = (n) => Math.round(n * 1000) / 1000;
-  
-  // build axios calls
-  const amountOptions = {
-    data: { dateRange: { rangeStart: yearStart , rangeEnd: yearEnd  } },
-    ...baseOptions
-  };
-  const actualsOptions = {
-    data: { dateRange: { rangeStart: yearStart , rangeEnd: today  } },
-    ...baseOptions
-  };
-
-  // run axios calls
-  const promises = [axios(amountOptions), axios(actualsOptions)];
-  const [amounts, actuals] = await Promise.all(promises);
-
-  // build base leave balances, and mappings of code -> name
-  let leaveMappings = {};
-  let leaveBalances = {};
-  for (let item of amounts.data.items) {
-    let { code, name } = item.project;
-    leaveMappings[code] = name;
-    leaveBalances[code] = hoursToSeconds(item.budget);
-  }
-
-  // remove actuals from leave balances
-  for (let item of actuals.data.items) {
-    let code = item.project.code;
-    if (!leaveBalances[code]) continue;
-    leaveBalances[code] -= hoursToSeconds(item.actuals);
-    leaveBalances[code] = round(leaveBalances[code]);
-  }
-
-  return { 
-    leaveBalances,
-    supplementalData: {
-      leaveMappings,
-      planableKeys: PLANABLE_KEYS
-    }
-  };
+  const resp = await axios(options);
+  return resp.data;
 }
 
 // |----------------------------------------------------|
