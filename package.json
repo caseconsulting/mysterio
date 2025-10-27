@@ -1,6 +1,6 @@
 {
   "name": "mysterio",
-  "version": "4.19.0",
+  "version": "4.20.0",
   "private": true,
   "description": "Facade for external APIs",
   "repository": "https://github.com/caseconsulting/mysterio",
@@ -33,13 +33,13 @@
     "npm": ">=10.5.0"
   },
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "3.888.0",
-    "@aws-sdk/client-lambda": "3.888.0",
-    "@aws-sdk/client-sns": "3.888.0",
-    "@aws-sdk/client-ssm": "3.888.0",
-    "@aws-sdk/lib-dynamodb": "3.888.0",
-    "@aws-sdk/s3-request-presigner": "3.888.0",
-    "axios": "1.12.1",
+    "@aws-sdk/client-dynamodb": "3.911.0",
+    "@aws-sdk/client-lambda": "3.911.0",
+    "@aws-sdk/client-sns": "3.911.0",
+    "@aws-sdk/client-ssm": "3.912.0",
+    "@aws-sdk/lib-dynamodb": "3.911.0",
+    "@aws-sdk/s3-request-presigner": "3.911.0",
+    "axios": "1.12.2",
     "dayjs": "1.11.18",
     "lodash": "4.17.21",
     "qs": "6.14.0",
