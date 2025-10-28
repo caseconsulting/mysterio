@@ -196,16 +196,18 @@ async function getLeaveBalances(userId) {
   const yearEnd = dateUtils.format(dateUtils.endOf(today, 'year'), null, 'YYYY-MM-DD');
   let round = (n) => (Math.round(n * 1000) / 1000);
 
+  // vars to fill
+  let leaveMappings = {};
+  let leaveBalances = {};
+
   // Get basic leave data
-  let basicLeave = getLeaveData(userId, yearStart, yearEnd);
-  let actuals = getLeaveData(userId, monthStart, today);
-  [basicLeave, actuals] = await Promise.all([basicLeave, actuals]);
+  let leave = await getLeaveData(userId, yearStart, yearEnd);
 
   // find oddball dates and refetch those ones
   let oddballPromises = [];
   let oddballCodes = [];
   const EOT = '2099-12-31';
-  for (let item of basicLeave.items) {
+  for (let item of leave.items) {
     if (item.beginDate !== yearStart || (item.endDate !== yearEnd && item.endDate !== EOT)) {
       oddballPromises.push(getLeaveData(userId, item.beginDate, item.endDate));
       oddballCodes.push(item.project.code);
@@ -220,22 +222,15 @@ async function getLeaveBalances(userId) {
     oddballMap[code] = oddballLeave[i].items.find((l) => l.project.code === code);
   }
 
-  let leaveMappings = {};
-  let leaveBalances = {};
-
   // set initial balances
-  for (let item of basicLeave.items) {
+  for (let item of leave.items) {
+    console.log(JSON.stringify(item));
     let { code, name } = item.project;
     let balance = oddballMap[code]?.budget ?? item.budget;
+    let actuals = oddballMap[code]?.actuals ?? item.actuals;
     leaveMappings[code] = name;
     leaveBalances[code] = hoursToSeconds(balance);
-  }
-
-  // factor in actuals
-  for (let item of actuals.items) {
-    let { code } = item.project;
-    leaveBalances[code] -= hoursToSeconds(item.actuals);
-    leaveBalances[code] = round(leaveBalances[code]);
+    leaveBalances[code] -= hoursToSeconds(actuals);
   }
 
   // return data in object
