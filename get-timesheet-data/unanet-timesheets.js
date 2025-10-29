@@ -61,7 +61,7 @@ async function handler(event) {
     // build the return body
     let supplementalData = combineSupplementalData(timeSupp, leaveSupp);
     processSupplementalData(supplementalData);
-    body = { system: 'Unanet', leaveBalances, timesheets, supplementalData };
+    body = { system: 'Unanet', timesheets, leaveBalances, supplementalData };
 
     // return everything together
     return { status: 200, body };
@@ -224,7 +224,6 @@ async function getLeaveBalances(userId) {
 
   // set initial balances
   for (let item of leave.items) {
-    console.log(JSON.stringify(item));
     let { code, name } = item.project;
     let balance = oddballMap[code]?.budget ?? item.budget;
     let actuals = oddballMap[code]?.actuals ?? item.actuals;
