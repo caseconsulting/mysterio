@@ -190,9 +190,8 @@ async function getTimesheet(startDate, endDate, title, userId) {
 async function getLeaveBalances(userId) {
   // base variables
   const today = dateUtils.getTodaysDate('YYYY-MM-DD');
-  const monthStart = dateUtils.format(dateUtils.startOf(today, 'month'), null, 'YYYY-MM-DD');
   let yearStart = dateUtils.format(dateUtils.startOf(today, 'year'), null, 'YYYY-MM-DD');
-  if (dateUtils.isSame(today, '2025-08-01', 'year')) yearStart = '2025-08-01'; // TODO: remove in 2026 and make yearStart a const
+  if (dateUtils.isSame(today, '2025-08-01', 'year')) yearStart = '2025-08-01'; // TODO: remove after 2025 and make yearStart a const
   const yearEnd = dateUtils.format(dateUtils.endOf(today, 'year'), null, 'YYYY-MM-DD');
   let round = (n) => (Math.round(n * 1000) / 1000);
 
@@ -203,9 +202,10 @@ async function getLeaveBalances(userId) {
   // Get basic leave data
   let leave = await getLeaveData(userId, yearStart, yearEnd);
 
-  // find oddball dates and refetch those ones
+  // find oddball dates and refetch those ones, build an object of them to access
   let oddballPromises = [];
   let oddballCodes = [];
+  let oddballMap = {};
   const EOT = '2099-12-31';
   for (let item of leave.items) {
     if (item.beginDate !== yearStart || (item.endDate !== yearEnd && item.endDate !== EOT)) {
@@ -214,9 +214,6 @@ async function getLeaveBalances(userId) {
     }
   }
   let oddballLeave = await Promise.all(oddballPromises);
-
-  // map oddballs for easy access
-  let oddballMap = {};
   for (let i = 0; i < oddballCodes.length; i++){
     let code = oddballCodes[i];
     oddballMap[code] = oddballLeave[i].items.find((l) => l.project.code === code);
@@ -228,8 +225,8 @@ async function getLeaveBalances(userId) {
     let balance = oddballMap[code]?.budget ?? item.budget;
     let actuals = oddballMap[code]?.actuals ?? item.actuals;
     leaveMappings[code] = name;
-    leaveBalances[code] = hoursToSeconds(balance);
-    leaveBalances[code] -= hoursToSeconds(actuals);
+    leaveBalances[code] = hoursToSeconds(balance) - hoursToSeconds(actuals);
+    leaveBalances[code] = round(leaveBalances[code]);
   }
 
   // return data in object
