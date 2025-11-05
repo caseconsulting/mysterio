@@ -1,18 +1,19 @@
 /**
  *
- * Unanet Swagger API: https://consultwithcase-sand.unanet.biz/platform/swagger/
- * Rate limit: 5000 calls per day (not 100% sure)
+ * Unanet API reference: https://consultwithcase-sand.unanet.biz/platform/swagger/
+ * 
+ * Details about rate limiting:
+ * Unanet will start rate limiting, but the process begins with contacting us. If they suspect
+ * we're abusing their API then they will ask if we should get a higher plan or reduce our calls.
+ * Exact numbers that would look suspicious are unknown.
+ * 
+ * Todo:
+ * - [ ] Warehouse API data from previous months (only get the last 2 months via API)
+ * - [ ] Make efficient calls for multiple users (will be doing entire company at some point)
  *
  */
 
 // types
-/**
- * @typedef {{ startDate: Date, endDate: Date, title: string, timesheets: { [jobCode: string]: number; } }} Timesheet
- * @typedef {{ today: number, future: { days: number, duration: number }, nonBillables: string[] }} Supplement
- * @typedef {'PTO' | 'CASE_CARES' | 'CASE_CONNECTIONS' | 'HOLIDAY' | 'TRAINING_TUITION'} PtoCode
- * @typedef {Record<PtoCode, { actuals: number, balance: number }} PtoData Maps a pto code to categorized hours
- * @typedef {Record<number, PtoData>} PtoMap Maps employee number to PtoData
- */
 
 // utils
 const axios = require('axios');
@@ -28,7 +29,6 @@ const STAGE = process.env.STAGE;
 const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
 const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
 const BILLABLE_CODES = ['BILL_SVCS'];
-const ACCRUAL_HEADERS = new Set(['CASE_CARES', 'CASE_CONNECTIONS', 'HOLIDAY', 'PTO', 'TRAINING_TUITION']);
 const PLANABLE_KEYS = { PTO: 'PTO', Holiday: 'HOLIDAY' };
 
 // DynamoDB
@@ -36,20 +36,6 @@ const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const dbClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dbClient);
-
-// S3
-const { S3Client, HeadObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
-const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const ACCRUALS_BUCKET = `case-expense-app-unanet-data-${STAGE}`;
-const ACCRUALS_KEY = 'accruals.json';
-
-/**
- * To do:
- * - [ ] Warehouse API data from previous months (only get the last 2 months via API)
- * - [ ] Find ways to limit API calls and be more efficient to avoid potential rate limiting
- * - [ ] Make efficient calls for multiple users (will be doing entire company at some point)
- * - [ ] Input validation
- */
 
 /**
  * Handler for Unanet timesheet data
@@ -62,40 +48,41 @@ async function handler(event) {
     // pull out vars from the event
     let { periods, employeeNumber, unanetPersonKey, options } = event;
     eventOptions = options ?? {};
-
+    
     // log in to Unanet
     accessToken = await getAccessToken();
     unanetPersonKey ??= await getUnanetPersonKey(employeeNumber);
+    
+    // get data from Unanet
+    const [ timeResults, leaveResults ] = await getUnanetData(periods, unanetPersonKey);
+    const { timesheets, supplementalData: timeSupp }  = timeResults;
+    const { leaveBalances, supplementalData: leaveSupp } = leaveResults;
 
     // build the return body
-    let { timesheets, supplementalData: timeSupp } = await getPeriodTimesheets(periods, unanetPersonKey);
-    let { ptoBalances, supplementalData: ptoSupp } = await getPtoBalances(employeeNumber);
-
-    // Subtract pto used since the date the file was uploaded to give the up-to-date pto balance:
-
-    // file is uploaded before start of day, containing previous days data
-    const cutoffDate = ptoSupp.accrualsUpdated;
-    const today = new Date();
-
-    // destructure newTimesheets from nested object
-    const {
-      timesheet: { timesheets: newTimesheets }
-    } = await getTimesheet(cutoffDate, today, dateUtils.format(today, null, 'MMMM'), unanetPersonKey);
-
-    for (const [key, value] of Object.entries(newTimesheets)) {
-      if (ACCRUAL_HEADERS.has(key)) ptoBalances[key] -= value;
-    }
-
-    let supplementalData = combineSupplementalData(timeSupp, ptoSupp);
+    let supplementalData = combineSupplementalData(timeSupp, leaveSupp);
     processSupplementalData(supplementalData);
-    body = { system: 'Unanet', timesheets, ptoBalances, supplementalData };
+    body = { system: 'Unanet', timesheets, leaveBalances, supplementalData };
 
     // return everything together
     return { status: 200, body };
   } catch (err) {
     return await handleError(err);
   }
-} // handler
+}
+
+/**
+ * Quick helper to get timesheet and leave balances. Really just makes the handler
+ * look prettier.
+ * 
+ * @param periods time periods from event
+ * @param unanetPersonKey userId from Unanet of person to get data for
+ */
+async function getUnanetData(periods, unanetPersonKey) {
+  return await Promise.all([
+    getPeriodTimesheets(periods, unanetPersonKey),
+    getLeaveBalances(unanetPersonKey),
+  ]);
+}
 
 /**
  * Gets timesheet data for a given array of periods and a Unanet user
@@ -118,7 +105,7 @@ async function getPeriodTimesheets(periods, userId) {
   // combine all supplemental data and return everything
   let supplementalData = combineSupplementalData(...supplDatas);
   return { timesheets, supplementalData };
-} // getPeriodTimesheets
+}
 
 /**
  * Creates a timesheet object for a given period
@@ -192,25 +179,65 @@ async function getTimesheet(startDate, endDate, title, userId) {
 
   // give back finished result
   return { timesheet, supplementalData };
-} // getTimesheet
+}
 
 /**
- * Gets a user's PTO balances
- *
- * @param unanetId Unanet ID of user
- * @param portalNumber employeeNumber from portal
- * @param timesheets user's timesheets
- * @return {Promise<{
- *   ptoBalances: PtoData,
- *   supplementalData: {
- *     accrualsUpdated: Date
- *   }
- * }>} PTO balances and supplemental data
+ * Gets current leave balances for a user
+ * 
+ * @param userId Unanet ID of user
+ * @returns {Promise<{leaveBalances: LeaveBalance, supplementalData: Supplement}>} leave balances and supplemental data
  */
-async function getPtoBalances(portalNumber) {
-  const { accruals, accrualsUpdated } = await getAccruals();
-  return { ptoBalances: accruals[portalNumber], supplementalData: { accrualsUpdated, planableKeys: PLANABLE_KEYS } };
-} // getPtoBalances
+async function getLeaveBalances(userId) {
+  // base variables
+  const today = dateUtils.getTodaysDate('YYYY-MM-DD');
+  let yearStart = dateUtils.format(dateUtils.startOf(today, 'year'), null, 'YYYY-MM-DD');
+  if (dateUtils.isSame(today, '2025-08-01', 'year')) yearStart = '2025-08-01'; // TODO: remove after 2025 and make yearStart a const
+  const yearEnd = dateUtils.format(dateUtils.endOf(today, 'year'), null, 'YYYY-MM-DD');
+  let round = (n) => (Math.round(n * 1000) / 1000);
+
+  // vars to fill
+  let leaveMappings = {};
+  let leaveBalances = {};
+
+  // Get basic leave data
+  let leave = await getLeaveData(userId, yearStart, yearEnd);
+
+  // find oddball dates and refetch those ones, build an object of them to access
+  let oddballPromises = [];
+  let oddballCodes = [];
+  let oddballMap = {};
+  const EOT = '2099-12-31';
+  for (let item of leave.items) {
+    if (item.beginDate !== yearStart || (item.endDate !== yearEnd && item.endDate !== EOT)) {
+      oddballPromises.push(getLeaveData(userId, item.beginDate, item.endDate));
+      oddballCodes.push(item.project.code);
+    }
+  }
+  let oddballLeave = await Promise.all(oddballPromises);
+  for (let i = 0; i < oddballCodes.length; i++){
+    let code = oddballCodes[i];
+    oddballMap[code] = oddballLeave[i].items.find((l) => l.project.code === code);
+  }
+
+  // set initial balances
+  for (let item of leave.items) {
+    let { code, name } = item.project;
+    let balance = oddballMap[code]?.budget ?? item.budget;
+    let actuals = oddballMap[code]?.actuals ?? item.actuals;
+    leaveMappings[code] = name;
+    leaveBalances[code] = hoursToSeconds(balance) - hoursToSeconds(actuals);
+    leaveBalances[code] = round(leaveBalances[code]);
+  }
+
+  // return data in object
+  return { 
+    leaveBalances,
+    supplementalData: {
+      leaveMappings,
+      planableKeys: PLANABLE_KEYS
+    }
+  };
+}
 
 // |----------------------------------------------------|
 // |                                                    |
@@ -244,63 +271,7 @@ async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
   if (resp.Count !== 1)
     throw new Error(`Could not distinguish Portal employee ${employeeNumber} (${resp.Count} options).`);
   return resp.Items[0];
-} // getEmployeeAttrFromDb
-
-/**
- * Returns the Unanet Accruals information as a JSON object, along with the date it was last updated.
- *
- * @returns {Promise<{ accruals: PtoMap, accrualsUpdated: Date }>}
- *          - accruals - Maps employee number to pto data
- *          - accrualsUpdated - the date the accrual data was uploaded
- */
-async function getAccruals() {
-  // build command to send S3
-  const s3Client = new S3Client({});
-  const params = {
-    Bucket: ACCRUALS_BUCKET,
-    Key: ACCRUALS_KEY
-  };
-
-  // get file metadata
-  const headCommand = new HeadObjectCommand(params);
-  await s3Client
-    .send(headCommand)
-    .then(async (headObjectData) => {
-      accrualsUpdated = headObjectData.LastModified;
-    })
-    .catch((err) => {
-      if (err.name == 'NotFound') {
-        // s3 object does not exist
-        const wrappedError = new Error(
-          `Could not find PTO file in S3. Bucket: ${ACCRUALS_BUCKET}, Key: ${ACCRUALS_KEY}`,
-          {
-            cause: err
-          }
-        );
-        wrappedError.code = 'ERR_S3_NOT_FOUND';
-        throw wrappedError;
-      }
-      throw new Error(err.message);
-    });
-  accrualsUpdated = dateUtils.subtract(accrualsUpdated, 4, 'h');
-
-  // get file data
-  let accrualsUrl;
-  const objCommand = new GetObjectCommand(params);
-  await getSignedUrl(s3Client, objCommand, { expiresIn: 60 })
-    .then((urlData) => {
-      accrualsUrl = urlData;
-    })
-    .catch((err) => {
-      throw new Error(err.message);
-    });
-
-  const resp = await axios.get(accrualsUrl);
-  return {
-    accruals: resp.data,
-    accrualsUpdated
-  };
-} // getAccruals
+}
 
 /**
  * Updates a user's personKey in DynamoDB for future use
@@ -323,7 +294,7 @@ async function updateUserPersonKey(employeeNumber, personKey) {
     ExpressionAttributeValues: { ':k': `${personKey}` }
   });
   await docClient.send(updateCommand);
-} // updateUserPersonKey
+}
 
 // |----------------------------------------------------|
 // |                                                    |
@@ -355,7 +326,7 @@ async function getAccessToken() {
   } catch (err) {
     throw new Error(`Login to Unanet failed: ${err.message}`);
   }
-} // getAccessToken
+}
 
 /**
  * Gets a user's key from Unanet API based on Portal employeeNumber
@@ -385,7 +356,7 @@ async function getUnanetPersonKey(employeeNumber) {
   // update user's DynamoDB object and return for usage now
   await updateUserPersonKey(employeeNumber, personKey);
   return personKey;
-} // getUnanetPersonKey
+}
 
 /**
  * Gets the user's timesheets within a given time period
@@ -412,7 +383,7 @@ async function getRawTimesheets(startDate, endDate, userId) {
   let resp = await axios(options);
   filtered = filterTimesheets(resp.data.items);
   return filtered;
-} // getRawTimesheets
+}
 
 /**
  * Fills the timesheets with jobcode data
@@ -430,7 +401,28 @@ async function getFullTimesheets(timesheets) {
   // pull out response data and return it all together
   let filledTimesheets = resp.map((res) => res.data);
   return filledTimesheets;
-} // getFullTimesheets
+}
+
+/**
+ * Gets leave balance report from Unanet
+ *
+ * @param userId Unanet ID of user
+ * @param startDate start date of period to look for
+ * @param endDate end date of period to look for
+ * @returns leave balances object and supplemental data
+ */
+async function getLeaveData(userId, startDate, endDate) {
+  const options = {
+    method: 'POST',
+    url: `${BASE_URL}/rest/people/${userId}/leave`,
+    data: {
+      dateRange: { rangeStart: startDate, rangeEnd: endDate }
+    },
+    headers: { 'Authorization': `Bearer ${accessToken}` }
+  };
+  const resp = await axios(options);
+  return resp.data;
+}
 
 // |----------------------------------------------------|
 // |                                                    |
@@ -466,7 +458,7 @@ function getProjectName(slip) {
   // return with task name if it exists
   if (!task) return project;
   else return `${project} - ${task}`;
-} // getProjectName
+}
 
 /**
  * Combines any number of supplemental data objects
@@ -477,19 +469,20 @@ function getProjectName(slip) {
 function combineSupplementalData(...supps) {
   // base default to make sure everything has at least some data
   /** @type Supplement */
-  let combined = { today: 0, future: { days: new Set(), duration: 0 }, nonBillables: [], planableKeys: {} };
+  let combined = { today: 0, future: { days: new Set(), duration: 0 }, nonBillables: [], leaveMappings: {}, planableKeys: {} };
 
   // loop through all supplemental data and combine it
   for (let supp of supps) {
     if (!supp) continue; // avoid error if it's undefined
     combined.today += supp.today ?? 0;
     combined.nonBillables = [...new Set([...combined.nonBillables, ...(supp.nonBillables ?? [])])];
+    combined.leaveMappings = { ...combined.leaveMappings, ...(supp.leaveMappings ?? {}) };
     combined.planableKeys = { ...combined.planableKeys, ...(supp.planableKeys ?? {}) };
     combined.future.raw = { ...combined.future.raw, ...(supp.future?.raw ?? {}) }
   }
 
   return combined;
-} // combineSupplementalData
+}
 
 /**
  * Last-second conversions of supplemental data before returning it. Do not use this anywhere
@@ -508,7 +501,7 @@ function processSupplementalData(data) {
       duration: durations.reduce((acc, curr) => acc + curr, 0)
     }
   }
-} // processSupplementalData
+}
 
 
 /**
@@ -529,7 +522,7 @@ function filterTimesheets(timesheets) {
 
   // return filtered timesheets
   return filtered;
-} // filterTimesheets
+}
 
 /**
  * Helper to seralize an error
@@ -545,7 +538,7 @@ function serializeError(err) {
     message: err.message ?? null,
     stack: err.stack ?? null
   };
-} // serializeError
+}
 
 /**
  * Helper to redact data from a string
@@ -559,7 +552,7 @@ function serializeError(err) {
 function redact(str, start, end, fill = '***') {
   if ([str, start, end, fill].some((v) => v == null)) return null;
   return str.slice(0, start) + fill + str.slice(-end);
-} // redact
+}
 
 /**
  * Builds an object to use in Promise rejections based on whether
@@ -599,7 +592,7 @@ async function handleError(err) {
       body
     };
   }
-} // handleError
+}
 
 // |----------------------------------------------------|
 // |                                                    |
