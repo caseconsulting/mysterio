@@ -25,6 +25,7 @@ const hoursToSeconds = (hours) => hours * 60 * 60;
 /** @type string */
 let accessToken;
 let eventOptions; // vars to allow event to communicate with all functions
+let errors = []; // list of non-critical errors for debugging/tracking
 const STAGE = process.env.STAGE;
 const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
 const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
@@ -61,7 +62,8 @@ async function handler(event) {
     // build the return body
     let supplementalData = combineSupplementalData(timeSupp, leaveSupp);
     processSupplementalData(supplementalData);
-    body = { system: 'Unanet', timesheets, leaveBalances, supplementalData };
+    errors = errors.length ? errors : undefined;
+    body = { system: 'Unanet', timesheets, leaveBalances, supplementalData, errors };
 
     // return everything together
     return { status: 200, body };
@@ -259,12 +261,13 @@ async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
   const TableName = `${STAGE}-employees`;
   const scanCommand = new ScanCommand({
     ProjectionExpression: attrs.join(','),
-    FilterExpression: 'employeeNumber = :n',
-    ExpressionAttributeValues: { ':n': Number(employeeNumber) },
+    FilterExpression: 'employeeNumber = :n OR employeeNumber = :s',
+    ExpressionAttributeValues: { ':n': Number(employeeNumber), ':s': String(employeeNumber) },
     TableName
   });
 
   // send command
+  console.log(scanCommand);
   resp = await docClient.send(scanCommand);
 
   // throw error or return object
@@ -274,26 +277,32 @@ async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
 }
 
 /**
- * Updates a user's personKey in DynamoDB for future use
+ * Updates a user's personKey in DynamoDB for future use.
+ * 
+ * On error, this function will not stop the code from returning.
  *
  * @param {number} employeeNumber user's portal employee number
  * @param {string} personKey from Unanet to add to user's profile
  */
 async function updateUserPersonKey(employeeNumber, personKey) {
-  // common table for both commands
-  const TableName = `${STAGE}-employees`;
+  try {
+    // common table for both commands
+    const TableName = `${STAGE}-employees`;
 
-  // find the user's ID
-  const { id } = await getEmployeeAttrFromDb(employeeNumber, 'id');
+    // find the user's ID
+    const { id } = await getEmployeeAttrFromDb(employeeNumber, 'id');
 
-  // use their ID to update the personKey
-  const updateCommand = new UpdateCommand({
-    TableName,
-    Key: { id },
-    UpdateExpression: `set unanetPersonKey = :k`,
-    ExpressionAttributeValues: { ':k': `${personKey}` }
-  });
-  await docClient.send(updateCommand);
+    // use their ID to update the personKey
+    const updateCommand = new UpdateCommand({
+      TableName,
+      Key: { id },
+      UpdateExpression: `set unanetPersonKey = :k`,
+      ExpressionAttributeValues: { ':k': `${personKey}` }
+    });
+    await docClient.send(updateCommand);
+  } catch (err) {
+    errors.push(serializeError(err));
+  }
 }
 
 // |----------------------------------------------------|
