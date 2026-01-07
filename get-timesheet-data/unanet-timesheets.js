@@ -62,7 +62,7 @@ async function handler(event) {
     // build the return body
     let supplementalData = combineSupplementalData(timeSupp, leaveSupp);
     processSupplementalData(supplementalData);
-    errors = errors.length ? errors : undefined;
+    errors = errors?.length ? errors : undefined;
     body = { system: 'Unanet', timesheets, leaveBalances, supplementalData, errors };
 
     // return everything together
