@@ -185,6 +185,57 @@ Resources:
                 - logs:PutLogEvents
               Effect: Allow
               Resource: '*'
+  ExternalExpenseProcessFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Join
+        - ''
+        - - mysterio-external-expense-
+          - !Ref Stage
+      CodeUri: external-expense/
+      AutoPublishAlias: !Ref Stage
+      Description: Handles external expense processing
+      Handler: app.handler
+      Layers:
+        - !Ref DependenciesLayer
+        - !Ref SharedLayer
+      Runtime: nodejs20.x
+      ProvisionedConcurrencyConfig:
+        ProvisionedConcurrentExecutions: 5
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Action:
+                - dynamodb:Scan
+                - dynamodb:Query
+                - dynamodb:UpdateItem
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-employees
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/Unanet/login
+        - Statement:
+            - Action:
+                - lambda:InvokeFunction
+                - lambda:InvokeAsync
+              Effect: Allow
+              Resource: '*'
+        - Statement:
+            - Action:
+                - kms:Decrypt
+              Effect: Allow
+              Resource: '*'
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
   GetTimesheetDataFunctionLogGroup:
     Type: AWS::Logs::LogGroup
     DependsOn:
