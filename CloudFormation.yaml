@@ -193,15 +193,12 @@ Resources:
         - - mysterio-external-expense-
           - !Ref Stage
       CodeUri: external-expense/
-      AutoPublishAlias: !Ref Stage
       Description: Handles external expense processing
       Handler: app.handler
       Layers:
         - !Ref DependenciesLayer
         - !Ref SharedLayer
       Runtime: nodejs20.x
-      ProvisionedConcurrencyConfig:
-        ProvisionedConcurrentExecutions: 5
       Timeout: 30
       Policies:
         - Statement:
