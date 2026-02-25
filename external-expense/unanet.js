@@ -29,11 +29,20 @@ async function handler(event) {
     // pull out vars from the event
     let { employeeNumber, unanetPersonKey, options } = event;
     eventOptions = options ?? {};
+
+    // login
+    accessToken = await getAccessToken();
+
+    // for now, just gets expense type unanet info
+    let data;
+    data = await getUnanetExpenseTypes();
     
-    let body = {};
+    let body = {
+      expenseTypes: data
+    };
 
     // return everything together
-    return { status: 200, body };
+    return { status: 200, ...body };
   } catch (err) {
     return await handleError(err);
   }
@@ -108,6 +117,56 @@ async function updateUserPersonKey(employeeNumber, personKey) {
 // |                  API CONNECTIONS                   |
 // |                                                    |
 // |----------------------------------------------------|
+
+/**
+ * Gets all expense types for pairing in frontend
+ */
+async function getUnanetExpenseTypes() {
+  // build options to find employee based on employeeNumber
+  let options = {
+    method: 'GET',
+    url: BASE_URL + '/rest/expense-types',
+    params: {
+      page: 1,
+      pageSize: 1000 // get all
+    },
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
+
+  // request data from Unanet API
+  let resp = await axios(options);
+
+  // map the items to a more direct usage format
+  let types = [];
+  for (let et of resp.data.items) {
+    types.push({
+      key: et.key,
+      purpose: et.name,
+      project_code: et.code,
+    })
+  }
+
+  // return just the array of expense types
+  return types;
+}
+
+/**
+ * Creates an expense
+ */
+async function createExpense(data) {
+  // {
+  //   "purpose": "Expense Type",
+  //   "location": "Maybe not needed?",
+  //   "expenseProjectAllocations": [
+  //     {
+  //       "projectKey": 1,
+  //       "taskKey": 1,
+  //       "allocation": 100 // this is a percent, always 100 for now
+  //     }
+  //   ],
+  //   "voucherType": "EXPENSE_REPORT" // constant I think
+  // }
+}
 
 /**
  * Returns an auth token for the API account
