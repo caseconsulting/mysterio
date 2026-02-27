@@ -27,19 +27,23 @@ const docClient = DynamoDBDocumentClient.from(dbClient);
 async function handler(event) {
   try {
     // pull out vars from the event
-    let { employeeNumber, unanetPersonKey, options } = event;
+    let { employeeNumber, unanetPersonKey, action, options } = event;
+    console.log(event);
     eventOptions = options ?? {};
 
     // login
     accessToken = await getAccessToken();
 
     // for now, just gets expense type unanet info
-    let data;
-    data = await getUnanetExpenseTypes();
-    
-    let body = {
-      expenseTypes: data
-    };
+    let body;
+    switch(action) {
+      case 'getExpenseTypes':
+        let expenseTypes = await getUnanetExpenseTypes();
+        body = { expenseTypes };
+        break;
+      default:
+        return notImplemented(action);
+    }
 
     // return everything together
     return { status: 200, ...body };
@@ -125,10 +129,10 @@ async function getUnanetExpenseTypes() {
   // build options to find employee based on employeeNumber
   let options = {
     method: 'GET',
-    url: BASE_URL + '/rest/expense-types',
+    url: BASE_URL + '/rest/project-types',
     params: {
       page: 1,
-      pageSize: 1000 // get all
+      pageSize: 2000 // get all
     },
     headers: { Authorization: `Bearer ${accessToken}` }
   };
@@ -141,8 +145,7 @@ async function getUnanetExpenseTypes() {
   for (let et of resp.data.items) {
     types.push({
       key: et.key,
-      purpose: et.name,
-      project_code: et.code,
+      name: et.name
     })
   }
 
@@ -229,6 +232,17 @@ async function getUnanetPersonKey(employeeNumber) {
 // |                       HELPERS                      |
 // |                                                    |
 // |----------------------------------------------------|
+
+/**
+ * Returns the not implemented response
+ */
+function notImplemented(action) {
+  let message = action ? `Given action '${action}' is not supported` : 'No action provided';
+  return {
+    status: 501,
+    message
+  }
+}
 
 /**
  * Helper to seralize an error
