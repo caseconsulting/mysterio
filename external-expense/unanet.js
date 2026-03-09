@@ -1,7 +1,6 @@
 // utils
 const axios = require('axios');
 const dateUtils = require('dateUtils'); // from shared lambda layer
-const { getSecret } = require('./secrets');
 const hoursToSeconds = (hours) => hours * 60 * 60;
 
 // global and stage-based vars
@@ -12,11 +11,13 @@ const STAGE = process.env.STAGE;
 const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
 const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
 
-// DynamoDB
+// AWS things
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 const dbClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dbClient);
+const ssmClient = new SSMClient({ region: 'us-east-1' });
 
 /**
  * Handler for Unanet timesheet data
@@ -27,26 +28,46 @@ const docClient = DynamoDBDocumentClient.from(dbClient);
 async function handler(event) {
   try {
     // pull out vars from the event
-    let { employeeNumber, unanetPersonKey, action, options } = event;
+    let { employeeNumber, unanetPersonKey, actions, options } = event;
     console.log(event);
     eventOptions = options ?? {};
 
     // login
     accessToken = await getAccessToken();
 
-    // for now, just gets expense type unanet info
-    let body;
-    switch(action) {
-      case 'getExpenseTypes':
-        let expenseTypes = await getUnanetExpenseTypes();
-        body = { expenseTypes };
-        break;
-      default:
-        return notImplemented(action);
+    // map event.actions to functions with titles
+    let map = {
+      getExpenseTypes: {
+        func: getUnanetExpenseTypes,
+        name: 'expenseTypes'
+      },
+      getProjects: {
+        func: getUnanetProjects,
+        name: 'projects'
+      },
+      getExpenseType: {
+        func: getUnanetExpenseType,
+        name: 'expenseTypes'
+      },
+      getProject: {
+        func: getUnanetProject,
+        name: 'projects'
+      }
+    };
+    let getMap = (key) => {
+      return map[key] ?? { func: notImplemented, name: key }
+    }
+
+    // build the response object
+    if (!Array.isArray(actions)) actions = [actions];
+    let body = {};
+    for (let action of actions) {
+      let { func, name } = getMap(action);
+      body[name] = await func(options?.params ?? {});
     }
 
     // return everything together
-    return { status: 200, ...body };
+    return { status: 200, body };
   } catch (err) {
     return await handleError(err);
   }
@@ -123,16 +144,19 @@ async function updateUserPersonKey(employeeNumber, personKey) {
 // |----------------------------------------------------|
 
 /**
- * Gets all expense types for pairing in frontend
+ * Gets all expense types for individual expenses
  */
 async function getUnanetExpenseTypes() {
-  // build options to find employee based on employeeNumber
+  // build options to find expense types
   let options = {
     method: 'GET',
-    url: BASE_URL + '/rest/project-types',
+    url: BASE_URL + '/rest/expense-types',
     params: {
       page: 1,
-      pageSize: 2000 // get all
+      pageSize: 2000, // get all
+      enabled: true, // only active
+      excludeOverage: true, // not including overage-allowed ETs
+      excludeAdvanceAndCashReturn: true // exclude 'ADVANCE' and 'CASH RETURN'
     },
     headers: { Authorization: `Bearer ${accessToken}` }
   };
@@ -145,12 +169,115 @@ async function getUnanetExpenseTypes() {
   for (let et of resp.data.items) {
     types.push({
       key: et.key,
-      name: et.name
+      name: et.name,
+      code: et.code
     })
   }
 
   // return just the array of expense types
   return types;
+}
+
+/**
+ * Gets specific expense type or types based on Unanet keys
+ * 
+ * @param keys - array of keys to get expese types for
+ */
+async function getUnanetExpenseType(keys) {
+  if (!Array.isArray(keys)) keys = [keys];
+
+  // build options to find expense types
+  let base = {
+    method: 'GET',
+    url: BASE_URL + '/rest/expense-types/search',
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
+
+  let promises = [];
+  for (let k of keys) {
+    promises.push(axios({ ...base, url: base.url + k }));
+  }
+  let resps = await Promise.all(promises);
+
+  // map types to be useful format
+  let types = {};
+  for (let et of resps) {
+    types[et.data.key] = {
+      key: et.data.key,
+      name: et.data.expenseTypeName,
+      code: et.data.expenseType
+    };
+  }
+
+  // return just the array of expense types
+  return types;
+}
+
+/**
+ * Gets all projects for mapping to Portal expense types
+ */
+async function getUnanetProjects() {
+  // build options to find projects
+  let options = {
+    method: 'POST',
+    url: BASE_URL + '/rest/projects/search',
+    params: { page: 1, pageSize: 2000 }, // get all in one query
+    data: {}, // no search, just get all
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
+
+  // request data from Unanet API
+  let resp = await axios(options);
+
+  // map the items to a more direct usage format
+  let projects = [];
+  for (let p of resp.data.items) {
+    projects.push({
+      key: p.key, // internal Unanet key
+      orgCode: p.projectOrg.code, // Org, eg I_CASE
+      name: p.title, // human-friendly name
+      code: p.code, // computer/spreadsheet name
+      open: p.status.name === 'Open' // whether the project is active in Unanet
+    })
+  }
+
+  // return array of projects
+  return projects;
+}
+
+/**
+ * Gets specific project or projects based on Unanet keys
+ * 
+ * @param keys - array of keys to get projects for
+ */
+async function getUnanetProject(keys) {
+  if (!Array.isArray(keys)) keys = [keys];
+
+  // build options to find project
+  let base = {
+    method: 'GET',
+    url: BASE_URL + '/rest/projects/',
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
+
+  let promises = [];
+  for (let k of keys) {
+    promises.push(axios({ ...base, url: base.url + k }));
+  }
+  let resps = await Promise.all(promises);
+
+  // map types to be useful format
+  let projects = {};
+  for (let et of resps) {
+    projects[et.data.key] = {
+      key: et.data.key,
+      name: et.data.title,
+      code: et.data.code
+    };
+  }
+
+  // return just the array of projects
+  return projects;
 }
 
 /**
@@ -178,7 +305,9 @@ async function createExpense(data) {
  */
 async function getAccessToken() {
   // get login info from parameter store
-  let { username, password } = JSON.parse(await getSecret('/Unanet/login'));
+  const params = { Name: '/Unanet/login', WithDecryption: true };
+  const secret = await ssmClient.send(new GetParameterCommand(params));
+  let { username, password } = JSON.parse(secret.Parameter.Value);
   if (!username || !password) throw new Error('Could not get login info from parameter store.');
 
   // build options to log in with user/pass from parameter store
@@ -236,11 +365,10 @@ async function getUnanetPersonKey(employeeNumber) {
 /**
  * Returns the not implemented response
  */
-function notImplemented(action) {
-  let message = action ? `Given action '${action}' is not supported` : 'No action provided';
+function notImplemented() {
   return {
     status: 501,
-    message
+    message: "Action not found or not provided."
   }
 }
 

@@ -1,6 +1,5 @@
 const { handler: unanetHandler } = require('./unanet');
 const dateUtils = require('dateUtils'); // from shared lambda layer
-const { getSecret } = require('./secrets');
 
 let accessToken;
 const STAGE = process.env.STAGE;
