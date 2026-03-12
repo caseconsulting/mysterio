@@ -9,7 +9,7 @@ let accessToken;
 let errors = []; // list of non-critical errors for debugging/tracking
 const STAGE = process.env.STAGE;
 const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
-const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
+const BASE_URL = `https://consultwithcase.unanet.biz/platform`;
 
 // AWS things
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
@@ -31,7 +31,7 @@ async function handler(event) {
     let { employeeNumber, unanetPersonKey, actions, options } = event;
     console.log(event);
     eventOptions = options ?? {};
-
+    
     // login
     accessToken = await getAccessToken();
 
@@ -46,11 +46,11 @@ async function handler(event) {
         name: 'projects'
       },
       getExpenseType: {
-        func: getUnanetExpenseType,
+        func: getUnanetExpenseTypes,
         name: 'expenseTypes'
       },
       getProject: {
-        func: getUnanetProject,
+        func: getUnanetProjects,
         name: 'projects'
       }
     };
@@ -63,7 +63,7 @@ async function handler(event) {
     let body = {};
     for (let action of actions) {
       let { func, name } = getMap(action);
-      body[name] = await func(options?.params ?? {});
+      body[name] = await func(options?.params ?? undefined);
     }
 
     // return everything together
@@ -146,7 +146,9 @@ async function updateUserPersonKey(employeeNumber, personKey) {
 /**
  * Gets all expense types for individual expenses
  */
-async function getUnanetExpenseTypes() {
+async function getUnanetExpenseTypes(keys) {
+  if (keys && !Array.isArray(keys)) keys = [keys];
+
   // build options to find expense types
   let options = {
     method: 'GET',
@@ -167,6 +169,7 @@ async function getUnanetExpenseTypes() {
   // map the items to a more direct usage format
   let types = [];
   for (let et of resp.data.items) {
+    if (keys && !keys.includes(et.key)) continue;
     types.push({
       key: et.key,
       name: et.name,
@@ -189,7 +192,7 @@ async function getUnanetExpenseType(keys) {
   // build options to find expense types
   let base = {
     method: 'GET',
-    url: BASE_URL + '/rest/expense-types/search',
+    url: BASE_URL + '/rest/expense-types/',
     headers: { Authorization: `Bearer ${accessToken}` }
   };
 
@@ -216,7 +219,9 @@ async function getUnanetExpenseType(keys) {
 /**
  * Gets all projects for mapping to Portal expense types
  */
-async function getUnanetProjects() {
+async function getUnanetProjects(keys) {
+  if (keys && !Array.isArray(keys)) keys = [keys];
+
   // build options to find projects
   let options = {
     method: 'POST',
@@ -232,6 +237,7 @@ async function getUnanetProjects() {
   // map the items to a more direct usage format
   let projects = [];
   for (let p of resp.data.items) {
+    if (keys && !keys.includes(p.key)) continue;
     projects.push({
       key: p.key, // internal Unanet key
       orgCode: p.projectOrg.code, // Org, eg I_CASE
