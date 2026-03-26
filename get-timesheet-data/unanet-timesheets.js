@@ -13,8 +13,6 @@
  *
  */
 
-// types
-
 // utils
 const axios = require('axios');
 const dateUtils = require('dateUtils'); // from shared lambda layer
@@ -22,7 +20,6 @@ const { getSecret } = require('./secrets');
 const hoursToSeconds = (hours) => hours * 60 * 60;
 
 // global and stage-based vars
-/** @type string */
 let accessToken;
 let eventOptions; // vars to allow event to communicate with all functions
 let errors = []; // list of non-critical errors for debugging/tracking
@@ -52,18 +49,26 @@ async function handler(event) {
     
     // log in to Unanet
     accessToken = await getAccessToken();
-    unanetPersonKey ??= await getUnanetPersonKey(employeeNumber);
-    
-    // get data from Unanet
-    const [ timeResults, leaveResults ] = await getUnanetData(periods, unanetPersonKey);
-    const { timesheets, supplementalData: timeSupp }  = timeResults;
-    const { leaveBalances, supplementalData: leaveSupp } = leaveResults;
 
-    // build the return body
-    let supplementalData = combineSupplementalData(timeSupp, leaveSupp);
-    processSupplementalData(supplementalData);
-    errors = errors?.length ? errors : undefined;
-    body = { system: 'Unanet', timesheets, leaveBalances, supplementalData, errors };
+    // get Unanet keys, current and historical (one or both)
+    let currentPersonKey, historicalPersonKey;
+    keyErrors = {};
+    try { currentPersonKey = await getUnanetPersonKey(employeeNumber) } catch (e) { keyErrors.c = e };
+    try { historicalPersonKey = await getUnanetPersonKey(employeeNumber, true) } catch (e) { keyErrors.h = e};
+    if (!currentPersonKey && !historicalPersonKey)
+      throw new Error(`Neither current nor historical person keys found for ${employeeNumber}:\nCurrent: ${keyErrors.c}\nHistorical: ${keyErrors.h}`);
+
+    // get bodies for current and historical (one or both)
+    let current, historical;
+    if (currentPersonKey) current = await getUnanetData(periods, currentPersonKey);
+    if (historicalPersonKey) historical = await getUnanetData(periods, historicalPersonKey)
+
+    // combine both bodies
+    if (current && historical) body = combineBodies(current, historical);
+    else body = current ?? historical;
+
+    // add any soft errors
+    if (errors?.length) body.errors = errors;
 
     // return everything together
     return { status: 200, body };
@@ -73,17 +78,41 @@ async function handler(event) {
 }
 
 /**
+ * Builds a return body from Unanet data given periods and the employee's
+ * Unanet key.
+ * 
+ * @param periods time periods from event
+ * @param unanetPersonKey userId from Unanet of person to get data for
+ * @returns response body for given person over given period
+ */
+async function getUnanetData(periods, unanetPersonKey) {
+  // get data from Unanet
+  const { timeResults, leaveResults } = await getTimesheetsAndBalances(periods, unanetPersonKey);
+  const { timesheets, supplementalData: timeSupp }  = timeResults;
+  const { leaveBalances, supplementalData: leaveSupp } = leaveResults;
+
+  // build the return body
+  let supplementalData = combineSupplementalData(timeSupp, leaveSupp);
+  processSupplementalData(supplementalData);
+  body = { system: 'Unanet', timesheets, leaveBalances, supplementalData };
+
+  return body;
+}
+
+/**
  * Quick helper to get timesheet and leave balances. Really just makes the handler
  * look prettier.
  * 
  * @param periods time periods from event
  * @param unanetPersonKey userId from Unanet of person to get data for
+ * @returns Object with time and leave 
  */
-async function getUnanetData(periods, unanetPersonKey) {
-  return await Promise.all([
+async function getTimesheetsAndBalances(periods, unanetPersonKey) {
+  let [timeResults, leaveResults] = await Promise.all([
     getPeriodTimesheets(periods, unanetPersonKey),
     getLeaveBalances(unanetPersonKey),
   ]);
+  return { timeResults, leaveResults };
 }
 
 /**
@@ -91,7 +120,7 @@ async function getUnanetData(periods, unanetPersonKey) {
  *
  * @param periods array of periods to get data for
  * @param userId Unanet key of user to get data for
- * @returns {Promise<{ timesheets: Timesheet[], supplementalData: Supplement[] }>} timesheets and supplemental data for all periods
+ * @returns timesheets and supplemental data for all periods
  */
 async function getPeriodTimesheets(periods, userId) {
   // get timesheets and data for all periods
@@ -112,11 +141,11 @@ async function getPeriodTimesheets(periods, userId) {
 /**
  * Creates a timesheet object for a given period
  *
- * @param {Date} startDate Start date (inclusive) of timesheet data
- * @param {Date} endDate End date (inclusive) of timesheet data
- * @param {string} title title of the timesheet
- * @param {string} userId Unanet ID of user
- * @returns {Promise<{timesheet: Timesheet, supplementalData: Supplement}>} timesheet object between start and end dates
+ * @param startDate Start date (inclusive) of timesheet data
+ * @param endDate End date (inclusive) of timesheet data
+ * @param title title of the timesheet
+ * @param userId Unanet ID of user
+ * @returns timesheet object between start and end dates
  */
 async function getTimesheet(startDate, endDate, title, userId) {
   // get data from Unanet
@@ -130,12 +159,9 @@ async function getTimesheet(startDate, endDate, title, userId) {
   let isFuture = (date) => dateUtils.isAfter(date, today, 'day');
 
   // vars to fill in
-  /** @type Supplement */
   let supplementalData = {};
-  /** @type Set<string> */
   let nonBillables = new Set();
 
-  /** @type Timesheet */
   let timesheet = { startDate, endDate, title, timesheets: {} };
 
   // loop through each month returned from Unanet API
@@ -187,7 +213,7 @@ async function getTimesheet(startDate, endDate, title, userId) {
  * Gets current leave balances for a user
  * 
  * @param userId Unanet ID of user
- * @returns {Promise<{leaveBalances: LeaveBalance, supplementalData: Supplement}>} leave balances and supplemental data
+ * @returns leave balances and supplemental data
  */
 async function getLeaveBalances(userId) {
   // base variables
@@ -251,10 +277,9 @@ async function getLeaveBalances(userId) {
  * Gets a specific employee attribute from the database
  * Usage eg: const { id, email } = await getEmployeeAttrFromDb(10001, 'id', 'email');
  *
- * @template {string[]} T
- * @param {number} employeeNumber employee to retrieve data for
- * @param {T} attrs attributes to fetch
- * @return {Promise<{ [K in T[number]]: any }>} An object with keys matching attrs
+ * @param employeeNumber employee to retrieve data for
+ * @param attrs attributes to fetch
+ * @return An object with keys matching attrs
  */
 async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
   // build command
@@ -267,7 +292,6 @@ async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
   });
 
   // send command
-  console.log(scanCommand);
   resp = await docClient.send(scanCommand);
 
   // throw error or return object
@@ -281,8 +305,8 @@ async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
  * 
  * On error, this function will not stop the code from returning.
  *
- * @param {number} employeeNumber user's portal employee number
- * @param {string} personKey from Unanet to add to user's profile
+ * @param employeeNumber user's portal employee number
+ * @param personKey from Unanet to add to user's profile
  */
 async function updateUserPersonKey(employeeNumber, personKey) {
   try {
@@ -314,7 +338,7 @@ async function updateUserPersonKey(employeeNumber, personKey) {
 /**
  * Returns an auth token for the API account
  *
- * @returns {Promise<string>} the auth token
+ * @returns the auth token
  */
 async function getAccessToken() {
   // get login info from parameter store
@@ -340,16 +364,18 @@ async function getAccessToken() {
 /**
  * Gets a user's key from Unanet API based on Portal employeeNumber
  *
- * @param {number} employeeNumber Portal Employee Number
- * @returns {Promise<string>} Unanet personKey
+ * @param employeeNumber Portal Employee Number
+ * @param historical (optional) Whether or not to use idCode2, typically used to get historical data
+ * @returns Unanet personKey
  */
-async function getUnanetPersonKey(employeeNumber) {
+async function getUnanetPersonKey(employeeNumber, historical = false) {
   // build options to find employee based on employeeNumber
+  let idCode = historical ? 'idCode2' : 'idCode1';
   let options = {
     method: 'POST',
     url: BASE_URL + '/rest/people/search',
     data: {
-      idCode1: employeeNumber
+      [idCode]: employeeNumber
     },
     headers: { Authorization: `Bearer ${accessToken}` }
   };
@@ -362,18 +388,21 @@ async function getUnanetPersonKey(employeeNumber) {
     throw new Error(`Could not distinguish Unanet employee ${employeeNumber} (${resp.data.length} options).`);
   let personKey = resp.data.items[0].key;
 
-  // update user's DynamoDB object and return for usage now
-  await updateUserPersonKey(employeeNumber, personKey);
+  // ~~update user's DynamoDB object and return for usage now~~
+  // We now have two person keys per employee, since historical data is separate.
+  // This could be stored.
+  // await updateUserPersonKey(employeeNumber, personKey);
+
   return personKey;
 }
 
 /**
  * Gets the user's timesheets within a given time period
  *
- * @param {Date} startDate - The period start date
- * @param {Date} endDate - The period end date
- * @param {string} userId - The unanet personKey
- * @returns {Promise<any[]>} Array of all user timesheets within the given time period
+ * @param startDate - The period start date
+ * @param endDate - The period end date
+ * @param userId - The unanet personKey
+ * @returns Array of all user timesheets within the given time period
  */
 async function getRawTimesheets(startDate, endDate, userId) {
   // build options to search for user's time within the start and end dates
@@ -383,14 +412,16 @@ async function getRawTimesheets(startDate, endDate, userId) {
     data: {
       personKeys: [userId],
       beginDateStart: startDate,
-      beginDateEnd: endDate
+      beginDateEnd: endDate,
+      // active: true
     },
     headers: { Authorization: `Bearer ${accessToken}` }
   };
-
+  
+  
   // get response
   let resp = await axios(options);
-  filtered = filterTimesheets(resp.data.items);
+  let filtered = filterTimesheets(resp.data.items);
   return filtered;
 }
 
@@ -443,8 +474,8 @@ async function getLeaveData(userId, startDate, endDate) {
  * Gets the project name, without any decimals or numbers
  * Eg. converts "9876.54.32.PROJECT.OY1" to "PROJECT OY1"
  *
- * @param {string} slip The timeslip object
- * @returns {string} More human-friendly project name for Portal
+ * @param slip The timeslip object
+ * @returns More human-friendly project name for Portal
  */
 function getProjectName(slip) {
   let projectName = slip.project?.name;
@@ -473,11 +504,10 @@ function getProjectName(slip) {
  * Combines any number of supplemental data objects
  *
  * @param supps the supplemental data objects
- * @returns {Supplement} combined supplementalData object
+ * @returns combined supplementalData object
  */
 function combineSupplementalData(...supps) {
   // base default to make sure everything has at least some data
-  /** @type Supplement */
   let combined = { today: 0, future: { days: new Set(), duration: 0 }, nonBillables: [], leaveMappings: {}, planableKeys: {} };
 
   // loop through all supplemental data and combine it
@@ -512,6 +542,38 @@ function processSupplementalData(data) {
   }
 }
 
+/**
+ * Combines return bodies into one unified body.
+ * Note that the first body's leave balances will be used.
+ * 
+ * @param bodies Spread of all bodies to combine
+ * @returns all bodies combined into one
+ */
+function combineBodies(...bodies) {
+  // base body
+  let [combined, ...rest] = bodies;
+
+  for (let body of rest) {
+    // combine timesheets
+    // since `periods` is the same for all fetches, array will always be the same order. Only
+    // the actual values will be different
+    for (let i in body.timesheets) {
+      // get the keys for both
+      let cSheet = combined.timesheets[i];
+      let bSheet = body.timesheets[i];
+      let keys = [...Object.keys(cSheet.timesheets), ...Object.keys(bSheet.timesheets)];
+      // add together
+      for (let key of keys) {
+        combined.timesheets[i].timesheets[key] = (cSheet.timesheets[key] ?? 0) + (bSheet.timesheets[key] ?? 0);
+      }
+    }
+
+    // combine supplemental data
+    combined.supplementalData = combineSupplementalData(combined.supplementalData, body.supplementalData);
+  }
+
+  return combined;
+}
 
 /**
  * Filters timesheets based on eventOptions
@@ -523,6 +585,7 @@ function filterTimesheets(timesheets) {
   let filtered = timesheets;
 
   // filter for status
+  // options: "NEW", "INUSE", "DISAPPROVED", "LOCKED", "COMPLETED", "EXTRACTED", "APPROVING", "SUBMITTED"
   if (eventOptions.status) {
     let status = eventOptions.status;
     if (!Array.isArray(status)) status = [status];
@@ -552,11 +615,11 @@ function serializeError(err) {
 /**
  * Helper to redact data from a string
  *
- * @param {string} str string to redact
- * @param {number} start how many characters to keep on the start
- * @param {number} end how many characters to keep on the end
- * @param {string} fill (optional) characters to fill in place of redacted data
- * @returns {string} The redacted string
+ * @param str string to redact
+ * @param start how many characters to keep on the start
+ * @param end how many characters to keep on the end
+ * @param fill (optional) characters to fill in place of redacted data
+ * @returns The redacted string
  */
 function redact(str, start, end, fill = '***') {
   if ([str, start, end, fill].some((v) => v == null)) return null;
