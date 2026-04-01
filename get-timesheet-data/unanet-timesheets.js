@@ -59,11 +59,36 @@ async function handler(event) {
     const { timesheets, supplementalData: timeSupp }  = timeResults;
     const { leaveBalances, supplementalData: leaveSupp } = leaveResults;
 
+<<<<<<< Updated upstream
     // build the return body
     let supplementalData = combineSupplementalData(timeSupp, leaveSupp);
     processSupplementalData(supplementalData);
     errors = errors?.length ? errors : undefined;
     body = { system: 'Unanet', timesheets, leaveBalances, supplementalData, errors };
+=======
+    // get Unanet keys, current and historical (one or both)
+    let currentPersonKey, historicalPersonKey;
+    keyErrors = {};
+    try { currentPersonKey = await getUnanetPersonKey(employeeNumber) } catch (e) { keyErrors.c = e };
+    try { historicalPersonKey = await getUnanetPersonKey(employeeNumber, true) } catch (e) { keyErrors.h = e};
+    if (!currentPersonKey && !historicalPersonKey)
+      throw new Error(`Neither current nor historical person keys found for ${employeeNumber}:\nCurrent: ${keyErrors.c}\nHistorical: ${keyErrors.h}`);
+
+    // get bodies for current and historical (one or both)
+    let current, historical;
+    if (currentPersonKey) current = await getUnanetData(periods, currentPersonKey);
+    if (historicalPersonKey) historical = await getUnanetData(periods, historicalPersonKey)
+
+    // combine both bodies
+    if (current && historical) body = combineBodies(current, historical);
+    else body = current ?? historical;
+
+    // process supplemental data
+    if (body.supplementalData) processSupplementalData(body.supplementalData);
+
+    // add any soft errors
+    if (errors?.length) body.errors = errors;
+>>>>>>> Stashed changes
 
     // return everything together
     return { status: 200, body };
@@ -73,6 +98,30 @@ async function handler(event) {
 }
 
 /**
+<<<<<<< Updated upstream
+=======
+ * Builds a return body from Unanet data given periods and the employee's
+ * Unanet key.
+ * 
+ * @param periods time periods from event
+ * @param unanetPersonKey userId from Unanet of person to get data for
+ * @returns response body for given person over given period
+ */
+async function getUnanetData(periods, unanetPersonKey) {
+  // get data from Unanet
+  const { timeResults, leaveResults } = await getTimesheetsAndBalances(periods, unanetPersonKey);
+  const { timesheets, supplementalData: timeSupp }  = timeResults;
+  const { leaveBalances, supplementalData: leaveSupp } = leaveResults;
+
+  // build the return body
+  let supplementalData = combineSupplementalData(timeSupp, leaveSupp);
+  body = { system: 'Unanet', timesheets, leaveBalances, supplementalData };
+
+  return body;
+}
+
+/**
+>>>>>>> Stashed changes
  * Quick helper to get timesheet and leave balances. Really just makes the handler
  * look prettier.
  * 
