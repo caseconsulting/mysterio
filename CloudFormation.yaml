@@ -211,6 +211,21 @@ Resources:
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-employees
         - Statement:
             - Action:
+                - dynamodb:Scan
+                - dynamodb:Query
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-expense-types
+        - Statement:
+            - Action:
+                - dynamodb:Scan
+                - dynamodb:Query
+                - dynamodb:UpdateItem
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-expenses
+        - Statement:
+            - Action:
                 - ssm:GetParameter*
               Effect: Allow
               Resource:
