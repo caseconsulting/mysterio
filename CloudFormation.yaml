@@ -215,13 +215,13 @@ Resources:
                 # On bucket itself (s3:___Bucket actions)
                 Fn::If:
                   - ProdDeployment
-                  - arn:aws:s3:::case-consulting-expense-app-attachments-prod/*
-                  - !Sub arn:aws:s3:::case-expense-app-attachments-${Stage}/*
+                  - arn:aws:s3:::case-consulting-expense-app-attachments-prod
+                  - !Sub arn:aws:s3:::case-expense-app-attachments-${Stage}
                 # On items in bucket (s3:___Object actions)
                 Fn::If:
                   - ProdDeployment
-                  - arn:aws:s3:::case-consulting-expense-app-attachments-prod
-                  - !Sub arn:aws:s3:::case-expense-app-attachments-${Stage}
+                  - arn:aws:s3:::case-consulting-expense-app-attachments-prod/*
+                  - !Sub arn:aws:s3:::case-expense-app-attachments-${Stage}/*
               Effect: Allow
         - Statement:
             - Action:
