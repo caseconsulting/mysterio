@@ -203,6 +203,19 @@ Resources:
       Policies:
         - Statement:
             - Action:
+                - s3:ListBucket
+                - s3:GetObject
+              Resource:
+                Fn::If:
+                  - ProdDeployment
+                  - arn:aws:s3:::case-consulting-expense-app-attachments-prod
+                  - Fn::Join:
+                    - ''
+                    - - arn:aws:s3:::case-expense-app-attachments-
+                      - Ref: Stage
+              Effect: Allow
+        - Statement:
+            - Action:
                 - dynamodb:Scan
                 - dynamodb:Query
                 - dynamodb:UpdateItem

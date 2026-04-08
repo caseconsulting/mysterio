@@ -1,3 +1,30 @@
+
+/**
+ * Status mapping:
+ *       UNANET               PORTAL
+ * INUSE       ->  CREATED
+ * COMPLETED   ->  CREATED
+ * SUBMITTED*  ->  CREATED
+ * APPROVING   ->  APPROVED
+ * DENIED      ->  RETURNED
+ * LOCKED*     ->  REIMBURSED
+ * EXTRACTED   ->  REIMBURSED
+ * 
+ * Not use:
+ * REQUEST_SUBMITTED  ->  
+ * PENDING_REVIEW     ->  ???
+ * PREAPPROVING       ->  
+ * DISAPPROVED        ->  
+ * REQUESTING         ->  
+ * PREAPPROVED        ->  
+ * 
+ * - [ ] Moving receipts to Unanet would be good
+ * - [ ] One Portal expense to one Unanet Expense Report
+ *    -  [ ] In the future - maybe one month to one report?
+ * - [ ] Corporate Cards may be put in Unanet first, then transfer to the Portal
+ * 
+ */
+
 // utils
 var fs = require('fs');
 const axios = require('axios');
@@ -8,24 +35,30 @@ const hoursToSeconds = (hours) => hours * 60 * 60;
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const dbClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dbClient);
 const ssmClient = new SSMClient({ region: 'us-east-1' });
+const s3Client = new S3Client({ apiVersion: '2006-03-01' });
 
 // stage
 const STAGE = process.env.STAGE;
-const URL_SUFFIX = STAGE === 'prod' ? '' : '-sand';
+const IS_PROD = process.env.STAGE === 'prod';
+const URL_SUFFIX = IS_PROD ? '' : '-sand';
 const BASE_URL = `https://consultwithcase${URL_SUFFIX}.unanet.biz/platform`;
+const PROD_FORMAT = IS_PROD ? 'consulting-' : ''; // TODO: still needed?
+const RECEIPTS_BUCKET = `case-${PROD_FORMAT}expense-app-attachments-${STAGE}`;
 
 // inter-function variables
 let accessToken;
 let errors = []; // list of non-critical errors for debugging/tracking
 
 // consts
-const TEAM_LEADS_KEY = STAGE === 'prod' ? undefined : 178; // TODO for prod
+const TEAM_LEADS_KEY = IS_PROD ? 178 : 178; // happens to be the same, may change
 const EMPLOYEE_PAY_KEY = 1;
 const COMPANY_CARD_KEY = 2;
-const USD_CODE = 119; // TODO check prod vs sandbox key
+const USD_CODE = IS_PROD ? 119 : 840;
 
 /**
  * Handler for Unanet timesheet data
@@ -35,6 +68,8 @@ const USD_CODE = 119; // TODO check prod vs sandbox key
  */
 async function handler(event) {
   try {
+    return test(event.params);
+
     // pull out vars from the event
     let { actions, options } = event;
     eventOptions = options ?? {};
@@ -44,26 +79,26 @@ async function handler(event) {
 
     // map event.actions to functions with titles
     let map = {
-      getExpenseTypes: {
-        func: getUnanetExpenseTypes,
-        name: 'expenseTypes'
-      },
-      getProjects: {
-        func: getUnanetProjects,
-        name: 'projects'
-      },
       getExpenseType: {
-        func: getUnanetExpenseTypes,
+        func: getUnanetExpenseType,
         name: 'expenseTypes'
       },
       getProject: {
-        func: getUnanetProjects,
+        func: getUnanetProject,
         name: 'projects'
+      },
+      getExpense: {
+        func: getUnanetExpense,
+        name: 'getExpense'
       },
       createExpense: {
         func: createUnanetExpense,
         name: 'createExpense'
-      }
+      },
+      test: {
+        func: test,
+        name: 'test'
+      },
     };
     let getMap = (key) => map[key] ?? { func: notImplemented, name: key };
 
@@ -81,6 +116,17 @@ async function handler(event) {
     console.log(err);
     return await handleError(err);
   }
+}
+
+/**
+ * For testing. Delete.
+ */
+async function test(...params) {
+  let [
+    expense
+  ] = params;
+
+  return await getAttachmentFromS3(expense);
 }
 
 // |----------------------------------------------------|
@@ -117,12 +163,41 @@ async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
 }
 
 /**
- * Gets a specific employee attribute from the database
- * Usage eg: const { id, email } = await getEmployeeAttrFromDb(10001, 'id', 'email');
+ * Gets an expense from DynamoDB. Also fetches the receipts unless disabled.
  *
  * @param employeeNumber employee to retrieve data for
  * @param attrs attributes to fetch
  * @return An object with keys matching attrs
+ */
+async function getPortalExpense(id, fetchReceipts = true) {
+  // build command
+  const TableName = `${STAGE}-expenses`;
+  const scanCommand = new ScanCommand({
+    FilterExpression: 'id = :d',
+    ExpressionAttributeValues: { ':d': id },
+    TableName
+  });
+
+  // send command and check for error
+  let resp = await docClient.send(scanCommand);
+  if (resp.Count !== 1) throw new Error(`Could not find Portal expense type ${id}`);
+
+  // get expense, return if not fetching receipts
+  let expense = resp.Items[0];
+  if (!fetchReceipts) return { expense };
+
+  // fetch receipts
+  let receipts = [];
+
+  // return both
+  return { expense, receipts };
+}
+
+/**
+ * Get expense type from DynamoDB
+ *
+ * @param id id in Dynamo of expense to fetch
+ * @return Object of portal expense
  */
 async function getPortalExpenseType(id) {
   // build command
@@ -203,11 +278,134 @@ async function updateExpenseDetails(obj) {
   }
 }
 
+/**
+ * Gets an attachment from S3.
+
+  * @param expense - expense object for which to get receipts
+  * @return Object - file read from s3
+  */
+async function getAttachmentFromS3(expense) {
+  // compute method
+  let urls = [];
+  let receipts = Array.isArray(expense.receipt) ? expense.receipt : [expense.receipt];
+  for (let i = 0; i < receipts.length; i++) {
+    let fileName = receipts[i];
+    let filePath = `${expense.employeeId}/${expense.id}/${fileName}`;
+    let params = { Bucket: RECEIPTS_BUCKET, Key: filePath };
+    let command = new GetObjectCommand(params);
+    urls[i] = await getSignedUrl(s3Client, command, { expiresIn: 60 })
+      .catch((err) => {
+        let error = { code: 403, message: `${err.message}` };
+        return error;
+      });  
+  }
+
+  // TODO get data and return that instead
+  return urls;
+} // getAttachmentFromS3
+
 // |----------------------------------------------------|
 // |                                                    |
 // |                     API GETS                       |
 // |                                                    |
 // |----------------------------------------------------|
+
+/**
+ * Gets Unanet expense attachments
+ * 
+ * @param keys keys or expenses to get
+ * @returns object of attachments, indexed by expense ID
+ */
+async function getUnanetExpenseAttachments(keys) {
+  if (!Array.isArray(keys)) keys = [keys];
+
+  // build options
+  let base = {
+    method: 'GET',
+    url: BASE_URL + '/rest/expenses/',
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
+
+  // get attachment IDs for each item
+  let promises = [];
+  for (let key of keys) {
+    promises.push(axios({ ...base, url: base.url + key + '/attachments' }));
+  }
+  let resps = await Promise.all(promises);
+  let attachmentIds = {};
+  for (let i in keys) {
+    attachmentIds[keys[i]] = resps[i].data.items.map(item => item.key);
+  }
+
+  // fetch attachment data per receipt
+  let attachments = {};
+  for (let key of keys) {
+    promises = [];
+    for (let attId of attachmentIds[key]) {
+      promises.push(axios({ ...base, url: base.url + key + '/attachments/' + attId }));
+    }
+    resps = await Promise.all(promises);
+    attachments[key] = resps.map(r => r.data);
+  }
+
+  // :)
+  return attachments;
+}
+
+/**
+ * Gets unanet expenses based on key
+ * 
+ * @param keys key or array of keys to get
+ * @returns expense object
+ */
+async function getUnanetExpense(keys) {
+  if (!Array.isArray(keys)) keys = [keys];
+
+  // build options to find expenses
+  let base = {
+    method: 'GET',
+    url: BASE_URL + '/rest/expenses/',
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
+
+  let promises = [];
+  for (let k of keys) {
+    promises.push(axios({ ...base, url: base.url + k }));
+  }
+  let resps = await Promise.all(promises);
+
+  // map expenses to be useful format
+  let expenses = {};
+  for (let exp of resps) {
+    expenses[exp.data.key] = {
+      // references to other Unanet data
+      key: exp.data.key,
+      creator: exp.data.creatorKey,
+      controller: exp.data.controller.key,
+      owner: {
+        key: exp.data.owner.key,
+        username: exp.data.owner.username,
+        email: exp.data.owner.email
+      },
+      expenseTypes: [], // filled out below
+      // other data
+      cost: exp.data.reimbursableAmount,
+      created: exp.data.createdDate,
+      purpose: exp.data.purpose, // often Portal expense type name, but no guarantee
+      location: exp.data.location,
+      status: exp.data.status,
+      pendingReview: exp.data.pendingReview,
+      attachmentCount: exp.data.attacmentCount,
+    };
+    // fill out expense types from details (could be multiple)
+    for (let detail of exp.data.expenseDetails) {
+      expenses[exp.data.key].expenseTypes.push(detail.expenseType.key);
+    }
+  }
+
+  // return just the array of expenses
+  return expenses;
+}
 
 /**
  * Gets all expense types for individual expenses
@@ -557,23 +755,25 @@ async function attachToUnanetExpense(expenseId, name, attachment, detailId) {
  * @param date (optional) date of extract (ie, reimbursedDate). Defaults to today if not supplied.
  */
 async function extractUnanetExpense(expenseId, date = null) {
+  data = undefined;
+  if (date) data = { postDate: date };
+
   date ??= dateUtils.getTodaysDate('YYYY-MM-DD');
   let options = {
     method: 'POST',
     url: BASE_URL + `/rest/expenses/${expenseId}/extract`,
-    data: { postDate: date },
+    data,
     headers: { Authorization: `Bearer ${accessToken}` }
   };
 
   let resp = await axios(options);
-
-  // TODO: error handle
 }
 
 /**
  * Submits an expense for reimbursement
  * 
  * @param expenseId ID/key of expense in Unanet
+ * @param comment (optiona) comment to add to expense
  */
 async function submitUnanetExpense(expenseId, comment = null) {
   let data = undefined;
@@ -587,8 +787,6 @@ async function submitUnanetExpense(expenseId, comment = null) {
   };
 
   let resp = await axios(options);
-
-  // TODO: error handle
 }
 
 // |----------------------------------------------------|
