@@ -72,15 +72,14 @@ const USD_CODE = IS_PROD ? 119 : 119;
  */
 async function handler(event) {
   try {
+    console.info('Starting...')
     // pull out vars from the event
+    console.info('Pulling out actions and options from event: ' + JSON.stringify(event));
     let { actions, options } = event;
     eventOptions = options ?? {};
     
     // login
     accessToken = await getAccessToken();
-
-    // TODO: REMOVE
-    return test(...(event.params || []));
 
     // map event.actions to functions with titles
     let map = {
@@ -100,6 +99,7 @@ async function handler(event) {
     let getMap = (key) => map[key] ?? { func: notImplemented, name: key };
 
     // build the response object
+    console.info('Running given functions')
     if (!Array.isArray(actions)) actions = [actions];
     let body = {};
     for (let action of actions) {
@@ -108,6 +108,7 @@ async function handler(event) {
     }
 
     // return everything together
+    console.info('Done! Returning 200')
     return { status: 200, body };
   } catch (err) {
     console.log(err);
@@ -119,6 +120,7 @@ async function handler(event) {
  * For testing. Delete.
  */
 async function test(...params) {
+  console.info('Begin test');
   let [expense] = params;
 
   // let { expenseKey, detailsKeys } = await createUnanetExpense(expense);
@@ -126,6 +128,7 @@ async function test(...params) {
 
   await syncPortalToUnanet(expense);
 
+  console.info('End test');
   return { status: 200 };
 }
 
@@ -142,15 +145,18 @@ async function test(...params) {
  * @param expense - Portal expense to sync
  */
 async function syncPortalToUnanet(expense) {
+  console.info('Syncing a Portal expense to Unanet, id ' + expense?.id);
   if (!expense?.id) throw new Error('Expense object required for sync');
 
   // no unanet data - create expense in Unanet
   if (!expense.unanetData) {
+    console.info('No Unanet info, submitting for first time');
     let { expenseKey, detailsKeys } = await createUnanetExpense(expense);
     let { expense: newExpense } = await updateExpenseDetails(expense, expenseKey, detailsKeys);
   }
   
   // fetch Unanet data
+  console.info('Fetching Unanet data for sync');
   let { expenseKey, detailsKeys } = expense.unanetData;
   let { [expenseKey]: unanetExpense } = await getUnanetExpense(expenseKey);
   let details = await getUnanetDetails(expenseKey, detailsKeys);
@@ -166,6 +172,7 @@ async function syncPortalToUnanet(expense) {
   }
   // we can only put Unanet expenses in INUSE and APPROVING
   if (UNANET_STATES.USER_CONTROL.has(unanetExpense.status) && PORTAL_STATES.ADMIN_CONTROL.has(expense.state)) {
+    console.info('Unanet expense is in ' + unanetExpense.status + ' status, submitting to match Portal state ' + expense.state);
     await submitUnanetExpense(expenseKey, 'Auto-submitted by via Portal API connection');
   }
 
@@ -187,6 +194,7 @@ async function syncPortalToUnanet(expense) {
  * @return An object with keys matching attrs
  */
 async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
+  console.info('Getting attribute(s) from db with for employee ' + employeeNumber + ': ' + attrs.join(', '));
   // build command
   const TableName = `${STAGE}-employees`;
   const scanCommand = new ScanCommand({
@@ -197,11 +205,14 @@ async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
   });
 
   // send command
+  console.info('Sending scan command to database');
   let resp = await docClient.send(scanCommand);
+  console.info('Scan command returnd without error');
 
   // throw error or return object
   if (resp.Count !== 1)
     throw new Error(`Could not distinguish Portal employee ${employeeNumber} (${resp.Count} options).`);
+  console.info('Found one employee and returned requested data');
   return resp.Items[0];
 }
 
@@ -213,6 +224,7 @@ async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
  * @return An object with keys matching attrs
  */
 async function getPortalExpense(id, fetchReceipts = true) {
+  console.info('Fetching a Portal expense from Dynamo');
   // build command
   const TableName = `${STAGE}-expenses`;
   const scanCommand = new ScanCommand({
@@ -222,17 +234,24 @@ async function getPortalExpense(id, fetchReceipts = true) {
   });
 
   // send command and check for error
+  console.info('Sending command');
   let resp = await docClient.send(scanCommand);
   if (resp.Count !== 1) throw new Error(`Could not find Portal expense type ${id}`);
+  console.info('Command returned successfully');
 
   // get expense, return if not fetching receipts
   let expense = resp.Items[0];
-  if (!fetchReceipts) return { expense };
+  if (!fetchReceipts) {
+    console.info('No receipts requested, returning expense by itself');
+    return { expense };
+  }
 
   // fetch receipts
+  console.info('NOT IMPLEMENTED: Fetching receipts');
   let receipts = [];
-
+  
   // return both
+  console.info('Receipts fetched, returning expense and receipts');
   return { expense, receipts };
 }
 
@@ -243,6 +262,7 @@ async function getPortalExpense(id, fetchReceipts = true) {
  * @return Object of portal expense
  */
 async function getPortalExpenseType(id) {
+  console.info('Getting Portal expense type with ID ' + id);
   // build command
   const TableName = `${STAGE}-expense-types`;
   const scanCommand = new ScanCommand({
@@ -252,10 +272,13 @@ async function getPortalExpenseType(id) {
   });
 
   // send command
+  console.info('Sending command');
   let resp = await docClient.send(scanCommand);
+  console.info('Command returned without error');
 
   // throw error or return object
   if (resp.Count !== 1) throw new Error(`Could not find Portal expense type ${id}`);
+  console.info('Found Portal expense type');
   return resp.Items[0];
 }
 
@@ -268,6 +291,7 @@ async function getPortalExpenseType(id) {
  * @param personKey from Unanet to add to user's profile
  */
 async function updateUserPersonKey(employeeNumber, personKey) {
+  console.info('Updating Unanet person key in Dynamo to ' + personKey + ' for employee ' + employeeNumber);
   try {
     // common table for both commands
     const TableName = `${STAGE}-employees`;
@@ -276,6 +300,7 @@ async function updateUserPersonKey(employeeNumber, personKey) {
     const { id } = await getEmployeeAttrFromDb(employeeNumber, 'id');
 
     // use their ID to update the personKey
+    console.info('Sending update command');
     const updateCommand = new UpdateCommand({
       TableName,
       Key: { id },
@@ -283,6 +308,7 @@ async function updateUserPersonKey(employeeNumber, personKey) {
       ExpressionAttributeValues: { ':k': `${personKey}` }
     });
     await docClient.send(updateCommand);
+    console.info('Update command returned successfully');
   } catch (err) {
     errors.push(serializeError(err));
   }
@@ -294,8 +320,10 @@ async function updateUserPersonKey(employeeNumber, personKey) {
  * @param obj object of expense, including the old id and the new/changed attributes
  */
 async function updateExpenseDetails(oldExpense, expenseKey, detailsKeys) {
+  console.info('Updating expense details');
   try {
     // build expression and attributes
+    console.info('Building expense...');
     let data = { expenseKey };
     if (detailsKeys) {
       if (!Array.isArray(detailsKeys)) detailsKeys = [detailsKeys];
@@ -305,6 +333,7 @@ async function updateExpenseDetails(oldExpense, expenseKey, detailsKeys) {
       ];
       data.detailsKeys = Array.from(new Set(data.detailsKeys))
     }
+    console.info('Finished building expense, running update command...');
 
     let info = {
       TableName: `${STAGE}-expenses`,
@@ -314,8 +343,9 @@ async function updateExpenseDetails(oldExpense, expenseKey, detailsKeys) {
       ExpressionAttributeValues: { ':data': data }
     }
     const updateCommand = new UpdateCommand(info);
-    
     let resp = await docClient.send(updateCommand);
+    console.info('Update command success, returning success');
+
     let newExpense = { ...oldExpense, unanetData: data };
     return { status: resp.$metadata.httpStatusCode, detailsKeys: data.detailsKeys, expense: newExpense };
   } catch (err) {
@@ -331,23 +361,30 @@ async function updateExpenseDetails(oldExpense, expenseKey, detailsKeys) {
   * @return Object - file read from s3
   */
 async function getAttachmentFromS3(expense) {
+  console.info('Fetching attachment from S3');
   // ensure expense receipts is an array
-  if (!expense.receipt) return [];
+  if (!expense.receipt) {
+    console.info('No receipt on expense, returning empty');
+    return [];
+  }
   let receipts = Array.isArray(expense.receipt) ? expense.receipt : [expense.receipt];
   
   // fill in base64 receipts
   let base64Receipts = [];
   let [method, responseType] = ['GET', 'arraybuffer']
   for (let i = 0; i < receipts.length; i++) {
+    console.info(`Fetching receipt ${i + 1}/${receipts.length}`);
     // set params
     let fileName = receipts[i];
     let filePath = `${expense.employeeId}/${expense.id}/${fileName}`;
     let params = { Bucket: RECEIPTS_BUCKET, Key: filePath };
     // get URL with decryption info
+    console.info('Building signed URL and fetching...');
     let command = new GetObjectCommand(params);
     let url = await getSignedUrl(s3Client, command, { expiresIn: 60 });
     // fetch receipt from URL and encode into base64
     let response = await axios({ method, url, responseType });
+    console.info('Fetched! Converting to base64 and continuing');
     base64Receipts[i] = {
       name: fileName,
       data: Buffer.from(response.data, 'binary').toString('base64'),
@@ -355,6 +392,7 @@ async function getAttachmentFromS3(expense) {
   }
 
   // return base64 encoded receipts
+  console.info('All receipts fetched');
   return base64Receipts;
 } // getAttachmentFromS3
 
@@ -372,6 +410,7 @@ async function getAttachmentFromS3(expense) {
  */
 async function getUnanetExpenseAttachments(keys) {
   if (!Array.isArray(keys)) keys = [keys];
+  console.info('Getting Unanet expense attachments for key(s) ' + keys.join(', '));
 
   // build options
   let base = {
@@ -382,27 +421,29 @@ async function getUnanetExpenseAttachments(keys) {
 
   // get attachment IDs for each item
   let promises = [];
-  for (let key of keys) {
-    promises.push(axios({ ...base, url: base.url + key + '/attachments' }));
-  }
+  for (let key of keys) promises.push(axios({ ...base, url: base.url + key + '/attachments' }));
+  console.info('Getting attachment IDs for expenses...');
   let resps = await Promise.all(promises);
+  console.info('All promises returned, parsing attachment IDs...');
   let attachmentIds = {};
-  for (let i in keys) {
-    attachmentIds[keys[i]] = resps[i].data.items.map(item => item.key);
-  }
+  for (let i in keys) attachmentIds[keys[i]] = resps[i].data.items.map(item => item.key);
 
   // fetch attachment data per receipt
   let attachments = {};
+  let i = 0;
   for (let key of keys) {
+    console.info(`Fetching attachments for expense ${key} (${++i}/${keys.length})`);
     promises = [];
     for (let attId of attachmentIds[key]) {
       promises.push(axios({ ...base, url: base.url + key + '/attachments/' + attId }));
     }
     resps = await Promise.all(promises);
     attachments[key] = resps.map(r => r.data);
+    console.info('Fetched successfully');
   }
 
   // :)
+  console.info('Done, returning all attachments');
   return attachments;
 }
 
@@ -414,6 +455,7 @@ async function getUnanetExpenseAttachments(keys) {
  */
 async function getUnanetExpense(keys) {
   if (!Array.isArray(keys)) keys = [keys];
+  console.info('Getting Unanet expenses with key(s) ' + keys.join(', '));
 
   // build options to find expenses
   let base = {
@@ -423,10 +465,9 @@ async function getUnanetExpense(keys) {
   };
 
   let promises = [];
-  for (let k of keys) {
-    promises.push(axios({ ...base, url: base.url + k }));
-  }
+  for (let k of keys) promises.push(axios({ ...base, url: base.url + k }));
   let resps = await Promise.all(promises);
+  console.info('Expenses fetched, extracting info...');
 
   // map expenses to be useful format
   let expenses = {};
@@ -457,6 +498,8 @@ async function getUnanetExpense(keys) {
     }
   }
 
+  console.info('Expense info extracted, returning');
+
   // return just the array of expenses
   return expenses;
 }
@@ -469,6 +512,7 @@ async function getUnanetExpense(keys) {
  */
 async function getUnanetDetails(expenseKey, keys) {
   if (!Array.isArray(keys)) keys = [keys];
+  console.info('Getting details for expense ' + expenseKey + ' with ID(s) ' + keys.join(', '));
 
   // build options to find expenses
   let base = {
@@ -477,11 +521,11 @@ async function getUnanetDetails(expenseKey, keys) {
     headers: { Authorization: `Bearer ${accessToken}` }
   };
 
+  console.info('Sending promises...');
   let promises = [];
-  for (let k of keys) {
-    promises.push(axios({ ...base, url: base.url + k }));
-  }
+  for (let k of keys) promises.push(axios({ ...base, url: base.url + k }));
   let resps = await Promise.all(promises);
+  console.info('Promises returned successfully, mapping into useful format...');
 
   // map expenses to be useful format
   let details = {};
@@ -497,45 +541,8 @@ async function getUnanetDetails(expenseKey, keys) {
   }
 
   // return just the array of expenses
+  console.info('Mapping complete, returning');
   return details;
-}
-
-/**
- * Gets all expense types for individual expenses
- */
-async function getUnanetExpenseTypes(keys) {
-  if (keys && !Array.isArray(keys)) keys = [keys];
-
-  // build options to find expense types
-  let options = {
-    method: 'GET',
-    url: BASE_URL + '/rest/expense-types',
-    params: {
-      page: 1,
-      pageSize: 2000, // get all
-      enabled: true, // only active
-      excludeOverage: true, // not including overage-allowed ETs
-      excludeAdvanceAndCashReturn: true // exclude 'ADVANCE' and 'CASH RETURN'
-    },
-    headers: { Authorization: `Bearer ${accessToken}` }
-  };
-
-  // request data from Unanet API
-  let resp = await axios(options);
-
-  // map the items to a more direct usage format
-  let types = [];
-  for (let et of resp.data.items) {
-    if (keys && !keys.includes(et.key)) continue;
-    types.push({
-      key: et.key,
-      name: et.name,
-      code: et.code
-    })
-  }
-
-  // return just the array of expense types
-  return types;
 }
 
 /**
@@ -545,6 +552,7 @@ async function getUnanetExpenseTypes(keys) {
  */
 async function getUnanetExpenseType(keys) {
   if (!Array.isArray(keys)) keys = [keys];
+  console.info('Getting Unanet expense type with of key(s) ' + keys.join(', '));
 
   // build options to find expense types
   let base = {
@@ -553,11 +561,11 @@ async function getUnanetExpenseType(keys) {
     headers: { Authorization: `Bearer ${accessToken}` }
   };
 
+  console.info('Building and sending promises...');
   let promises = [];
-  for (let k of keys) {
-    promises.push(axios({ ...base, url: base.url + k }));
-  }
+  for (let k of keys) promises.push(axios({ ...base, url: base.url + k }));
   let resps = await Promise.all(promises);
+  console.info('Promises returned successfully, mapping into useful format...');
 
   // map types to be useful format
   let types = {};
@@ -570,42 +578,8 @@ async function getUnanetExpenseType(keys) {
   }
 
   // return just the array of expense types
+  console.info('Map success, returning');
   return types;
-}
-
-/**
- * Gets all projects for mapping to Portal expense types
- */
-async function getUnanetProjects(keys) {
-  if (keys && !Array.isArray(keys)) keys = [keys];
-
-  // build options to find projects
-  let options = {
-    method: 'POST',
-    url: BASE_URL + '/rest/projects/search',
-    params: { page: 1, pageSize: 2000 }, // get all in one query
-    data: {}, // no search, just get all
-    headers: { Authorization: `Bearer ${accessToken}` }
-  };
-
-  // request data from Unanet API
-  let resp = await axios(options);
-
-  // map the items to a more direct usage format
-  let projects = [];
-  for (let p of resp.data.items) {
-    if (keys && !keys.includes(p.key)) continue;
-    projects.push({
-      key: p.key, // internal Unanet key
-      orgCode: p.projectOrg.code, // Org, eg I_CASE
-      name: p.title, // human-friendly name
-      code: p.code, // computer/spreadsheet name
-      open: p.status.name === 'Open' // whether the project is active in Unanet
-    })
-  }
-
-  // return array of projects
-  return projects;
 }
 
 /**
@@ -615,6 +589,7 @@ async function getUnanetProjects(keys) {
  */
 async function getUnanetProject(keys) {
   if (!Array.isArray(keys)) keys = [keys];
+  console.info('Getting Unanet projects with key(s) ' + keys.join(', '));
 
   // build options to find project
   let base = {
@@ -623,11 +598,11 @@ async function getUnanetProject(keys) {
     headers: { Authorization: `Bearer ${accessToken}` }
   };
 
+  console.info('Running promises...');
   let promises = [];
-  for (let k of keys) {
-    promises.push(axios({ ...base, url: base.url + k }));
-  }
+  for (let k of keys) promises.push(axios({ ...base, url: base.url + k }));
   let resps = await Promise.all(promises);
+  console.info('Promise(s) returned successfully, mapping to useful format...');
 
   // map types to be useful format
   let projects = {};
@@ -640,6 +615,7 @@ async function getUnanetProject(keys) {
   }
 
   // return just the array of projects
+  console.info('Map success, returning');
   return projects;
 }
 
@@ -649,11 +625,14 @@ async function getUnanetProject(keys) {
  * @returns the auth token
  */
 async function getAccessToken() {
+  console.info('Getting Unanet access token');
   // get login info from parameter store
+  console.info('Getting login info from Parameter Store...');
   const params = { Name: '/Unanet/login', WithDecryption: true };
   const secret = await ssmClient.send(new GetParameterCommand(params));
   let { username, password } = JSON.parse(secret.Parameter.Value);
   if (!username || !password) throw new Error('Could not get login info from parameter store.');
+  console.info('Login info retrieved, making request...');
 
   // build options to log in with user/pass from parameter store
   let options = {
@@ -665,6 +644,7 @@ async function getAccessToken() {
   // request and return token from Unanet API
   try {
     let resp = await axios(options);
+    console.info('Token received, returning');
     return resp.data.token;
   } catch (err) {
     throw new Error(`Login to Unanet failed: ${err.message}`);
@@ -678,6 +658,7 @@ async function getAccessToken() {
  * @returns Unanet personKey
  */
 async function getUnanetPersonKey(employeeNumber) {
+  console.info(`Getting Unanet person key for Portal employee number ${employeeNumber}`);
   // build options to find employee based on employeeNumber
   let options = {
     method: 'POST',
@@ -689,8 +670,10 @@ async function getUnanetPersonKey(employeeNumber) {
   };
 
   // request data from Unanet API
+  console.info('Sending request to Unanet...');
   let resp = await axios(options);
   let items = resp.data?.items ?? [];
+  console.info('Found ' + items.length + ' items matching employee number.')
 
   // pull out the employee's key
   if (items.length !== 1)
@@ -699,6 +682,7 @@ async function getUnanetPersonKey(employeeNumber) {
 
   // update user's DynamoDB object and return for usage now
   // await updateUserPersonKey(employeeNumber, personKey);
+  console.info(`Person key retrieved: ${personKey}, returning`);
   return personKey;
 }
 
@@ -712,6 +696,7 @@ async function getUnanetPersonKey(employeeNumber) {
  * Creates an expense
  */
 async function createUnanetExpense(portalExpense) {
+  console.info('Creating Unanet expense for Portal expense ' + portalExpense.id);
   // company card vs employee paid
   let paymentMethod = portalExpense.companyCard ? COMPANY_CARD_KEY : EMPLOYEE_PAY_KEY;
   // get expense type
@@ -724,6 +709,7 @@ async function createUnanetExpense(portalExpense) {
   let taskKey = expenseType.budgetName.toLowerCase().includes('team lead') ? TEAM_LEADS_KEY : undefined;
 
   // build expense (report)
+  console.info('Building expense and details...');
   let expense = {
     purpose: portalExpense.budgetName,
     expenseProjectAllocations: [
@@ -749,16 +735,20 @@ async function createUnanetExpense(portalExpense) {
   }
   
   // create expense report and submit details
+  console.info('Creating Unanet expense and details...');
   let expenseKey = await postUnanetExpense(expense, employeeKey);
   let detailsKey = await submitUnanetExpenseDetails(details, expenseKey);
+  console.info('Success creating Unanet expense and details, uploading any attachments...');
   
   // get receipts from S3 and upload to expense
   let receipts = await getAttachmentFromS3(portalExpense);
   for (let rec of receipts) await attachToUnanetExpense(expenseKey, rec.name, rec.data, detailsKey);
+  console.info('Done uploading attachment(s), updating in Dynamo');
 
   // update Portal expense in AWS
   let { detailsKeys } = await updateExpenseDetails(portalExpense, expenseKey, detailsKey);
 
+  console.info('Update in Dynamo Success, returning expenseKey and detailsKeys');
   return { expenseKey, detailsKeys };
 }
 
@@ -769,6 +759,7 @@ async function createUnanetExpense(portalExpense) {
  * @returns unanet key of submitted expense
  */
 async function postUnanetExpense(expense, ownerKey) {
+  console.info('Posting a Unanet expense via API');
   // build options to submit expense
   let options = {
     method: 'POST',
@@ -779,10 +770,12 @@ async function postUnanetExpense(expense, ownerKey) {
   };
 
   // request data from Unanet API
+  console.info('Sendint expense to API...');
   let resp = await axios(options);
-
+  
   // pull out the employee's key
   if (!resp.data?.key) throw new Error(`Failed to submit expense to Unanet.`);
+  console.info('Success! Returning returned key');
   return resp.data.key;
 }
 
@@ -793,6 +786,7 @@ async function postUnanetExpense(expense, ownerKey) {
  * @returns unanet key of details
  */
 async function submitUnanetExpenseDetails(details, expenseKey) {
+  console.info('Submitting expense details to Unanet for expense ' + expenseKey);
   // build options to submit details to expense report
   let options = {
     method: 'POST',
@@ -806,6 +800,7 @@ async function submitUnanetExpenseDetails(details, expenseKey) {
 
   // pull out the employee's key
   if (!resp.data?.key) throw new Error(`Failed to submit expense details to Unanet.`);
+  console.info('Success, returning key');
   return resp.data.key;
 }
 
@@ -819,6 +814,7 @@ async function submitUnanetExpenseDetails(details, expenseKey) {
  * @return Unanet key of attachment
  */
 async function attachToUnanetExpense(expenseKey, name, attachment, detailId) {
+  console.info(`Attaching ${name} to ${expenseKey} and detail key ${detailId}`);
   let options = {
     method: 'POST',
     url: BASE_URL + `/rest/expenses/${expenseKey}/attachments`,
@@ -832,9 +828,11 @@ async function attachToUnanetExpense(expenseKey, name, attachment, detailId) {
   }
   if (detailId) options.params = { detailId };
 
+  console.info('Sending attachment');
   let resp = await axios(options);
 
   if (!resp.data?.key) throw new Error(`Failed to attach items to Unanet expense ${expenseKey} (and detail ${detailId})`);
+  console.info('Success attaching, returning');
   return resp.data.key;
 }
 
@@ -846,10 +844,11 @@ async function attachToUnanetExpense(expenseKey, name, attachment, detailId) {
  */
 async function extractUnanetExpense(expenseKey, date = null) {
 
-  throw new Error('WARNING: Unanet expenses cannot be extracted except by admin. ' + 
+  throw new Error('ERROR: Unanet expenses cannot be extracted except by admin. ' + 
     'The Unanet API account is not set as admin at the time of this code being written. ' +
     'If are confident that extraction should work, then remove this error and continue.');
 
+  console.info('Extracting Unanet expense ' + expenseKey);
   date ??= dateUtils.getTodaysDate('YYYY-MM-DD');
   let options = {
     method: 'POST',
@@ -858,7 +857,9 @@ async function extractUnanetExpense(expenseKey, date = null) {
   };
   if (date) options.data = { postDate: date };
 
+  console.info('Sending extract via API');
   let resp = await axios(options);
+  console.info('Success extracting, returning');
 
   return { status: resp.status, data: resp.data }
 }
@@ -870,6 +871,7 @@ async function extractUnanetExpense(expenseKey, date = null) {
  * @param comment (optiona) comment to add to expense
  */
 async function submitUnanetExpense(expenseKey, comment = null) {
+  console.info('Submitting Unanet expense ' + expenseKey);
   let data = undefined;
   if (comment) data = { comment };
 
@@ -880,7 +882,9 @@ async function submitUnanetExpense(expenseKey, comment = null) {
     headers: { Authorization: `Bearer ${accessToken}` }
   };
 
+  console.info('Submitting to API');
   let resp = await axios(options);
+  console.info('Submit success, returning');
   return { status: resp.status, data: resp.data }
 }
 
@@ -897,16 +901,20 @@ async function submitUnanetExpense(expenseKey, comment = null) {
  * @returns base64 string of file
  */
 function base64(file) {
+  console.info('Converting file to Base64...');
   // read binary data
   var bitmap = fs.readFileSync(file);
   // convert binary data to base64 encoded string
-  return new Buffer(bitmap).toString('base64');
+  let buff = new Buffer(bitmap).toString('base64');
+  console.info('Done, returninng');
+  return buff;
 }
 
 /**
  * Returns the not implemented response
  */
 function notImplemented() {
+  console.info('Returning 501 Not Implemented')
   return {
     status: 501,
     message: "Action not found or not provided."
@@ -920,6 +928,7 @@ function notImplemented() {
  * @returns object of serialized data for printing/returning
  */
 function serializeError(err) {
+  console.info('Serializing error')
   if (!err) return null;
   if (typeof err === 'string') return err;
   return {
@@ -939,6 +948,7 @@ function serializeError(err) {
  * @returns The redacted string
  */
 function redact(str, start, end, fill = '***') {
+  console.info('Redacting data')
   if ([str, start, end, fill].some((v) => v == null)) return null;
   return str.slice(0, start) + fill + str.slice(-end);
 }
@@ -951,6 +961,8 @@ function redact(str, start, end, fill = '***') {
  * @returns object to use for Promise.reject()
  */
 async function handleError(err) {
+  console.info('Handing error');
+
   // make sure the error function doesn't error
   err ??= new Error('Unknown error occurred.');
 
