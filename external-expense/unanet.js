@@ -1,5 +1,11 @@
 
 /**
+ * 
+ * BUILD ERROR MESSAGES NEXT
+ *   - expense type and project must be provided
+ *   - user needs access to both
+ *   - etc. Unanet has an object with the message you can return, and even a code
+ * 
  * Status mapping:
  *     UNANET         PORTAL
  * INUSE       ->  CREATED
@@ -85,20 +91,27 @@ async function handler(event) {
     console.info('Running given function: ' + action);
     let body;
     switch (action) {
-      // gets spefific expense type(s)
+      // gets all expense types
       case 'getExpenseTypes':
         body = await getUnanetExpenseTypes();
         break;
+      // gets specific expense types
       case 'getExpenseType':
         body = await getUnanetExpenseType(params?.keys);
         break;
-      case 'getProject':
+      // gets all projects
       case 'getProjects':
+        body = await getUnanetProjects();
+        break;
+      // gets specific projects
+      case 'getProject':
         body = await getUnanetProject(params?.keys);
         break;
+      // pushes an expense from Portal to Unanet
       case 'portalSync':
         body = await syncPortalToUnanet(params?.expense);
         break;
+      // graceful not found error
       default:
         body = notImplemented();
         break;
@@ -408,7 +421,7 @@ async function getAttachmentFromS3(expense) {
  * Gets all expense types for individual expenses
  */
 async function getUnanetExpenseTypes(keys) {
-  console.info('Getting Unanet expense expenses');
+  console.info('Getting Unanet expense types');
   if (keys && !Array.isArray(keys)) {
     keys = [keys];
     console.log('... for keys ' + keys.join(', '));
@@ -447,6 +460,45 @@ async function getUnanetExpenseTypes(keys) {
   // return just the array of expense types
   console.info('Map success, returning');
   return types;
+}
+
+/**
+ * Gets all projects for mapping to Portal expense types
+ */
+async function getUnanetProjects(keys) {
+  console.info('Getting Unanet projects');
+  if (keys && !Array.isArray(keys)) keys = [keys];
+
+  // build options to find projects
+  let options = {
+    method: 'POST',
+    url: BASE_URL + '/rest/projects/search',
+    params: { page: 1, pageSize: 2000 }, // get all in one query
+    data: {}, // no search, just get all
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
+
+  // request data from Unanet API
+  console.info('Sending request to Unanet...');
+  let resp = await axios(options);
+
+  // map the items to a more direct usage format
+  console.info('Request returned successfully, mapping into useful format...');
+  let projects = [];
+  for (let p of resp.data.items) {
+    if (keys && !keys.includes(p.key)) continue;
+    projects.push({
+      key: p.key, // internal Unanet key
+      orgCode: p.projectOrg.code, // Org, eg I_CASE
+      name: p.title, // human-friendly name
+      code: p.code, // computer/spreadsheet name
+      open: p.status.name === 'Open' // whether the project is active in Unanet
+    })
+  }
+
+  // return array of projects
+  console.info('Map success, returning');
+  return projects;
 }
 
 /**
