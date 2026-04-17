@@ -85,14 +85,19 @@ async function handler(event) {
     console.info('Running given function: ' + action);
     let body;
     switch (action) {
+      // gets spefific expense type(s)
+      case 'getExpenseTypes':
+        body = await getUnanetExpenseTypes();
+        break;
       case 'getExpenseType':
-        body = await getUnanetExpenseType(params.keys);
+        body = await getUnanetExpenseType(params?.keys);
         break;
       case 'getProject':
-        body = await getUnanetProject(params.keys);
+      case 'getProjects':
+        body = await getUnanetProject(params?.keys);
         break;
       case 'portalSync':
-        body = await syncPortalToUnanet(params.expense);
+        body = await syncPortalToUnanet(params?.expense);
         break;
       default:
         body = notImplemented();
@@ -398,6 +403,51 @@ async function getAttachmentFromS3(expense) {
 // |                     API GETS                       |
 // |                                                    |
 // |----------------------------------------------------|
+
+/**
+ * Gets all expense types for individual expenses
+ */
+async function getUnanetExpenseTypes(keys) {
+  console.info('Getting Unanet expense expenses');
+  if (keys && !Array.isArray(keys)) {
+    keys = [keys];
+    console.log('... for keys ' + keys.join(', '));
+  }
+
+  // build options to find expense types
+  let options = {
+    method: 'GET',
+    url: BASE_URL + '/rest/expense-types',
+    params: {
+      page: 1,
+      pageSize: 2000, // get all
+      enabled: true, // only active
+      excludeOverage: true, // not including overage-allowed ETs
+      excludeAdvanceAndCashReturn: true // exclude 'ADVANCE' and 'CASH RETURN'
+    },
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
+
+  // request data from Unanet API
+  console.info('Sending request to Unanet...');
+  let resp = await axios(options);
+  console.info('Request returned successfully, mapping into useful format...');
+
+  // map the items to a more direct usage format
+  let types = [];
+  for (let et of resp.data.items) {
+    if (keys && !keys.includes(et.key)) continue;
+    types.push({
+      key: et.key,
+      name: et.name,
+      code: et.code
+    })
+  }
+
+  // return just the array of expense types
+  console.info('Map success, returning');
+  return types;
+}
 
 /**
  * Gets Unanet expense attachments
