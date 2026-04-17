@@ -75,40 +75,33 @@ async function handler(event) {
     console.info('Starting...')
     // pull out vars from the event
     console.info('Pulling out actions and options from event: ' + JSON.stringify(event));
-    let { actions, options } = event;
+    let { action, options, params } = event;
     eventOptions = options ?? {};
     
     // login
     accessToken = await getAccessToken();
 
-    // map event.actions to functions with titles
-    let map = {
-      getExpenseType: {
-        func: getUnanetExpenseType,
-        name: 'expenseTypes'
-      },
-      getProject: {
-        func: getUnanetProject,
-        name: 'projects'
-      },
-      portalSync: {
-        func: syncPortalToUnanet,
-        name: 'portalSync'
-      }
-    };
-    let getMap = (key) => map[key] ?? { func: notImplemented, name: key };
-
     // build the response object
-    console.info('Running given functions')
-    if (!Array.isArray(actions)) actions = [actions];
-    let body = {};
-    for (let action of actions) {
-      let { func, name } = getMap(action);
-      body[name] = await func(options?.params ?? undefined);
+    console.info('Running given function: ' + action);
+    let body;
+    switch (action) {
+      case 'getExpenseType':
+        body = await getUnanetExpenseType(params.keys);
+        break;
+      case 'getProject':
+        body = await getUnanetProject(params.keys);
+        break;
+      case 'portalSync':
+        body = await syncPortalToUnanet(params.expense);
+        break;
+      default:
+        body = notImplemented();
+        break;
     }
 
     // return everything together
-    console.info('Done! Returning 200')
+    console.info('Done! Returning 200');
+    console.info('Return body: ' + JSON.stringify(body));
     return { status: 200, body };
   } catch (err) {
     console.log(err);
@@ -153,13 +146,14 @@ async function syncPortalToUnanet(expense) {
     console.info('No Unanet info, submitting for first time');
     let { expenseKey, detailsKeys } = await createUnanetExpense(expense);
     let { expense: newExpense } = await updateExpenseDetails(expense, expenseKey, detailsKeys);
+    expense = newExpense;
   }
   
   // fetch Unanet data
   console.info('Fetching Unanet data for sync');
   let { expenseKey, detailsKeys } = expense.unanetData;
   let { [expenseKey]: unanetExpense } = await getUnanetExpense(expenseKey);
-  let details = await getUnanetDetails(expenseKey, detailsKeys);
+  // let details = await getUnanetDetails(expenseKey, detailsKeys);
 
   // update status if needed
   const UNANET_STATES = {
@@ -175,6 +169,9 @@ async function syncPortalToUnanet(expense) {
     console.info('Unanet expense is in ' + unanetExpense.status + ' status, submitting to match Portal state ' + expense.state);
     await submitUnanetExpense(expenseKey, 'Auto-submitted by via Portal API connection');
   }
+
+  // return the new Portal expense in case it's changed
+  return expense;
 
   // TODO: whatever else can be done? Might not be anything tbh
 }
