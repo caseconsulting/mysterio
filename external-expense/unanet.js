@@ -149,7 +149,7 @@ async function syncPortalToUnanet(expense) {
   if (!expense.unanetData) {
     console.info('No Unanet info, submitting for first time');
     let { expenseKey, detailsKeys } = await createUnanetExpense(expense);
-    let { expense: newExpense } = await updateExpenseDetails(expense, expenseKey, detailsKeys);
+    let { expense: newExpense } = await updateDynamoExpenseDetails(expense, expenseKey, detailsKeys);
     expense = newExpense;
   }
   
@@ -288,44 +288,12 @@ async function getPortalExpenseType(id) {
 }
 
 /**
- * Updates a user's personKey in DynamoDB for future use.
- * 
- * On error, this function will not stop the code from returning.
- *
- * @param employeeNumber user's portal employee number
- * @param personKey from Unanet to add to user's profile
- */
-async function updateUserPersonKey(employeeNumber, personKey) {
-  console.info('Updating Unanet person key in Dynamo to ' + personKey + ' for employee ' + employeeNumber);
-  try {
-    // common table for both commands
-    const TableName = `${STAGE}-employees`;
-
-    // find the user's ID
-    const { id } = await getEmployeeAttrFromDb(employeeNumber, 'id');
-
-    // use their ID to update the personKey
-    console.info('Sending update command');
-    const updateCommand = new UpdateCommand({
-      TableName,
-      Key: { id },
-      UpdateExpression: `SET unanetPersonKey = :k`,
-      ExpressionAttributeValues: { ':k': `${personKey}` }
-    });
-    await docClient.send(updateCommand);
-    console.info('Update command returned successfully');
-  } catch (err) {
-    errors.push(serializeError(err));
-  }
-}
-
-/**
  * Patches expense data with new information
  * 
  * @param id id of expense 
  * @param newData object of new data to patch
 */
-async function updateExpense(id, newData) {
+async function updateDynamoExpense(id, newData) {
   // Build the UpdateExpression and ExpressionAttributeValues dynamically
   const updateExpressionParts = [];
   const expressionAttributeValues = {};
@@ -360,7 +328,7 @@ async function updateExpense(id, newData) {
  * @param expenseKey key of unanet expense
  * @param detailsKeys keys of all details
  */
-async function updateExpenseDetails(oldExpense, expenseKey, detailsKeys) {
+async function updateDynamoExpenseDetails(oldExpense, expenseKey, detailsKeys) {
   console.info('Updating expense details');
   try {
     // build expression and attributes
@@ -844,7 +812,7 @@ async function createUnanetExpense(portalExpense) {
         taskKey
       }
     ],
-    // voucherType: "EXPENSE_REPORT"
+    voucherType: "EXPENSE_REPORT"
   };
 
   // build details
@@ -871,7 +839,7 @@ async function createUnanetExpense(portalExpense) {
   console.info('Done uploading attachment(s), updating in Dynamo');
 
   // update Portal expense in AWS
-  let { detailsKeys } = await updateExpenseDetails(portalExpense, expenseKey, detailsKey);
+  let { detailsKeys } = await updateDynamoExpenseDetails(portalExpense, expenseKey, detailsKey);
 
   console.info('Update in Dynamo Success, returning expenseKey and detailsKeys');
   return { expenseKey, detailsKeys };
@@ -1116,15 +1084,18 @@ async function handleError(err) {
     body.messages = err.response.data.messages;
   }
 
-  // log for log searching
-  console.log('Extracted error, returning');
-
-  return {
+  let error = {
     status: 500,
     message: err.message,
     code: err.code,
     body
-  };
+  }
+
+  // log for log searching
+  console.log('Extracted error, returning');
+  console.log(JSON.stringify(error))
+
+  return error;
 
 }
 
