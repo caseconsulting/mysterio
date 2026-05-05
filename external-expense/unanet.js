@@ -1,11 +1,5 @@
 
 /**
- * 
- * BUILD ERROR MESSAGES NEXT
- *   - expense type and project must be provided
- *   - user needs access to both
- *   - etc. Unanet has an object with the message you can return, and even a code
- * 
  * Status mapping:
  *     UNANET         PORTAL
  * INUSE       ->  CREATED
@@ -23,13 +17,6 @@
  * DISAPPROVED        ->  
  * REQUESTING         ->  
  * PREAPPROVED        ->  
- * 
- * - [ ] Moving receipts to Unanet would be good
- * - [ ] One Portal expense to one Unanet Expense Report
- *    -  [ ] In the future - maybe one month to one report?
- * - [ ] Corporate Cards may be put in Unanet first, then transfer to the Portal
- *   -> minimize dependency on Unanet. even manual portal entry would be better
- *   -> separate expense type that has cc enabled
  * 
  */
 
@@ -122,7 +109,6 @@ async function handler(event) {
     console.info('Return body: ' + JSON.stringify(body));
     return { status: 200, body };
   } catch (err) {
-    console.log(err);
     return await handleError(err);
   }
 }
@@ -130,9 +116,9 @@ async function handler(event) {
 /**
  * For testing. Delete.
  */
-async function test(...params) {
+async function test(params) {
   console.info('Begin test');
-  let [expense] = params;
+  let { expense } = params;
 
   // let { expenseKey, detailsKeys } = await createUnanetExpense(expense);
   // await submitUnanetExpense(expenseKey, 'comment!');
@@ -175,17 +161,22 @@ async function syncPortalToUnanet(expense) {
 
   // update status if needed
   const UNANET_STATES = {
-    USER_CONTROL: new Set(...['INUSE', 'COMPLETED', 'SUBMITTED', 'APPROVING']),
-    ADMIN_CONTROL: new Set(...['DENIED', 'EXTRACTED', 'LOCKED'])
+    USER_CONTROL: new Set(['INUSE', 'COMPLETED']),
+    ADMIN_CONTROL: new Set(['SUBMITTED', 'APPROVING', 'DENIED', 'EXTRACTED', 'LOCKED'])
   }
   const PORTAL_STATES = {
-    USER_CONTROL: new Set(...['CREATED', 'APPROVED', 'REJECTED', 'RETURNED', 'REVISED']),
-    ADMIN_CONTROL: new Set(...['REIMBURSED', 'REJECTED'])
+    USER_CONTROL: new Set(['CREATED', 'APPROVED', 'REJECTED', 'RETURNED', 'REVISED']),
+    ADMIN_CONTROL: new Set(['REIMBURSED', 'REJECTED'])
   }
   // we can only put Unanet expenses in INUSE and APPROVING
   if (UNANET_STATES.USER_CONTROL.has(unanetExpense.status) && PORTAL_STATES.ADMIN_CONTROL.has(expense.state)) {
     console.info('Unanet expense is in ' + unanetExpense.status + ' status, submitting to match Portal state ' + expense.state);
     await submitUnanetExpense(expenseKey, 'Auto-submitted by via Portal API connection');
+  } else if (UNANET_STATES.ADMIN_CONTROL.has(unanetExpense.status) && PORTAL_STATES.USER_CONTROL.has(expense.state)) {
+    console.info('Unanet expense is in ' + unanetExpense.status + ' status, editing Portal expense to be state ' + expense.state);
+
+  } else {
+    console.info('Doing nothing: Unanet expense is in ' + unanetExpense.status + ' status, which already matches Portal state ' + expense.state);
   }
 
   // return the new Portal expense in case it's changed
@@ -235,7 +226,7 @@ async function getEmployeeAttrFromDb(employeeNumber, ...attrs) {
  * Gets an expense from DynamoDB. Also fetches the receipts unless disabled.
  *
  * @param employeeNumber employee to retrieve data for
- * @param attrs attributes to fetch
+ * @param fetchReceipts whether or not to download receipts
  * @return An object with keys matching attrs
  */
 async function getPortalExpense(id, fetchReceipts = true) {
@@ -243,7 +234,7 @@ async function getPortalExpense(id, fetchReceipts = true) {
   // build command
   const TableName = `${STAGE}-expenses`;
   const scanCommand = new ScanCommand({
-    FilterExpression: 'id = :d',
+    KeyConditionExpression: 'id = :d',
     ExpressionAttributeValues: { ':d': id },
     TableName
   });
@@ -261,9 +252,8 @@ async function getPortalExpense(id, fetchReceipts = true) {
     return { expense };
   }
 
-  // fetch receipts
-  console.info('NOT IMPLEMENTED: Fetching receipts');
-  let receipts = [];
+  // fetch receipts (function logs)
+  let receipts = getAttachmentFromS3(expense);
   
   // return both
   console.info('Receipts fetched, returning expense and receipts');
@@ -330,9 +320,45 @@ async function updateUserPersonKey(employeeNumber, personKey) {
 }
 
 /**
+ * Patches expense data with new information
+ * 
+ * @param id id of expense 
+ * @param newData object of new data to patch
+*/
+async function updateExpense(id, newData) {
+  // Build the UpdateExpression and ExpressionAttributeValues dynamically
+  const updateExpressionParts = [];
+  const expressionAttributeValues = {};
+  const expressionAttributeNames = {};
+
+  Object.keys(newData).forEach((key, index) => {
+    updateExpressionParts.push(`#key${index} = :value${index}`);
+    expressionAttributeNames[`#key${index}`] = key;
+    expressionAttributeValues[`:value${index}`] = newData[key];
+  });
+
+  const updateExpression = `SET ${updateExpressionParts.join(", ")}`;
+
+  const params = {
+    TableName: `${STAGE}-expenses`,
+    Key: { id },
+    UpdateExpression: updateExpression,
+    ExpressionAttributeNames: expressionAttributeNames,
+    ExpressionAttributeValues: expressionAttributeValues,
+    ReturnValues: "ALL_NEW",
+  };
+
+  const command = new UpdateCommand(params);
+  const response = await docClient.send(command);
+  return response.Attributes;
+}
+
+/**
  * Updates an expense in the expenses table.
  *
- * @param obj object of expense, including the old id and the new/changed attributes
+ * @param oldExpense full old expense object
+ * @param expenseKey key of unanet expense
+ * @param detailsKeys keys of all details
  */
 async function updateExpenseDetails(oldExpense, expenseKey, detailsKeys) {
   console.info('Updating expense details');
@@ -818,7 +844,7 @@ async function createUnanetExpense(portalExpense) {
         taskKey
       }
     ],
-    voucherType: "EXPENSE_REPORT"
+    // voucherType: "EXPENSE_REPORT"
   };
 
   // build details
@@ -1060,12 +1086,24 @@ function redact(str, start, end, fill = '***') {
  * @returns object to use for Promise.reject()
  */
 async function handleError(err) {
-  console.info('Handing error');
+  console.info('Handling error');
+
+  // check if Unanet is down
+  let ping = await axios.get(BASE_URL + '/rest/ping');
+  if (ping?.status !== 200) {
+    console.log('Unanet did not respond to ping, returning 503');
+    return {
+      status: 503,
+      message: 'Unanet API failed to respond.',
+      code: 'ERR_UNANET_DOWN',
+      body
+    };
+  };
 
   // make sure the error function doesn't error
   err ??= new Error('Unknown error occurred.');
 
-  // body to return either way
+  // pull out error from local error structure
   let body = {
     stage: STAGE ?? null,
     url: BASE_URL ?? null,
@@ -1073,25 +1111,21 @@ async function handleError(err) {
     err: serializeError(err)
   };
 
-  // return codes based on result of ping
-  let ping = await axios.get(BASE_URL + '/rest/ping');
-  if (ping?.status < 300 && ping?.status >= 200) {
-    // Unanet is up
-    return {
-      status: 500,
-      message: err.message,
-      code: err.code,
-      body
-    };
-  } else {
-    // Unanet is down
-    return {
-      status: 503,
-      message: 'Unanet API failed to respond.',
-      code: 'ERR_UNANET_DOWN',
-      body
-    };
+  // pull out error messages from Unanet error structure
+  if (err.response?.data?.messages) {
+    body.messages = err.response.data.messages;
   }
+
+  // log for log searching
+  console.log('Extracted error, returning');
+
+  return {
+    status: 500,
+    message: err.message,
+    code: err.code,
+    body
+  };
+
 }
 
 // |----------------------------------------------------|
