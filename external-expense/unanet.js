@@ -74,6 +74,8 @@ async function handler(event) {
     // login
     accessToken = await getAccessToken();
 
+    // return await test(params);
+
     // build the response object
     console.info('Running given function: ' + action);
     let body;
@@ -122,6 +124,20 @@ async function test(params) {
 
   // let { expenseKey, detailsKeys } = await createUnanetExpense(expense);
   // await submitUnanetExpense(expenseKey, 'comment!');
+
+  // let aws = await getAttachmentFromS3(expense);
+  // let net = await getUnanetExpenseAttachments(expense.unanetData.expenseKey);
+
+  // console.log(Object.keys(aws[0]));
+  // aws = aws[0].data;
+  // net = net[expense.unanetData.expenseKey][0].data;
+
+  // console.log('------------------')
+  // console.log(aws == net);
+  // console.log('------------------')
+  // console.log(typeof aws);
+  // console.log(typeof net);
+  // console.log('------------------')
 
   await syncPortalToUnanet(expense);
 
@@ -172,17 +188,43 @@ async function syncPortalToUnanet(expense) {
   if (UNANET_STATES.USER_CONTROL.has(unanetExpense.status) && PORTAL_STATES.ADMIN_CONTROL.has(expense.state)) {
     console.info('Unanet expense is in ' + unanetExpense.status + ' status, submitting to match Portal state ' + expense.state);
     await submitUnanetExpense(expenseKey, 'Auto-submitted by via Portal API connection');
-  } else if (UNANET_STATES.ADMIN_CONTROL.has(unanetExpense.status) && PORTAL_STATES.USER_CONTROL.has(expense.state)) {
-    console.info('Unanet expense is in ' + unanetExpense.status + ' status, editing Portal expense to be state ' + expense.state);
-
   } else {
-    console.info('Doing nothing: Unanet expense is in ' + unanetExpense.status + ' status, which already matches Portal state ' + expense.state);
+    console.info('Doing nothing: Unanet expense is in ' + unanetExpense.status + ' status, which already matches or is backwards from Portal state ' + expense.state);
+  }
+
+  // update images if needed (Portal is source of truth)
+  // note that this actually looks at the contents, not just the number of receipts
+  if (expense.receipt?.length > 0) {
+    console.info('Expense has receipts. Comparing Portal receipts with Unanet attachments...')
+    let portalAttachments = await getAttachmentFromS3(expense);
+    let unanetAttachments = await getUnanetExpenseAttachments(expenseKey)
+    unanetAttachments = unanetAttachments[expenseKey] ?? [];
+    // check each Portal receipt and compare find it in Unanet
+    for (let i in portalAttachments) {
+      let pAtt = portalAttachments[i];
+      let match = unanetAttachments.findIndex((uAtt) => pAtt.data === uAtt.data);
+      if (match > -1) {
+        portalAttachments.splice(i--, 1);
+        unanetAttachments.splice(match, 1);
+      }
+    }
+    console.info(`Portal has ${portalAttachments.length} additional receipts, Unanet has ${unanetAttachments.length} extra attachments`)
+    // delete unused Unanet attachments
+    let deletePromises = [];
+    for (let { key } of unanetAttachments)
+      deletePromises.push(deleteUnanetAttachment(expenseKey, key));
+    await Promise.all(deletePromises);
+    // upload remaining Portal attachments
+    let uploadPromises = [];
+    for (let { data, name } of portalAttachments)
+      uploadPromises.push(attachToUnanetExpense(expenseKey, name, data));
+    await Promise.all(uploadPromises);
+    console.info('Finished matching receipts and attachments.')
   }
 
   // return the new Portal expense in case it's changed
+  console.info('Done syncing! Returning current Portal expense.');
   return expense;
-
-  // TODO: whatever else can be done? Might not be anything tbh
 }
 
 // |----------------------------------------------------|
@@ -253,7 +295,7 @@ async function getPortalExpense(id, fetchReceipts = true) {
   }
 
   // fetch receipts (function logs)
-  let receipts = getAttachmentFromS3(expense);
+  let receipts = await getAttachmentFromS3(expense);
   
   // return both
   console.info('Receipts fetched, returning expense and receipts');
@@ -979,6 +1021,33 @@ async function submitUnanetExpense(expenseKey, comment = null) {
   let resp = await axios(options);
   console.info('Submit success, returning');
   return { status: resp.status, data: resp.data }
+}
+
+// |----------------------------------------------------|
+// |                                                    |
+// |                    API DELETES                     |
+// |                                                    |
+// |----------------------------------------------------|
+
+/**
+ * Deletes an attachment from a given expense
+ * 
+ * @param expenseKey key or expense in Unanet
+ * @param attachmentKey key of attachment in Unanet
+ */
+async function deleteUnanetAttachment(expenseKey, attachmentKey) {
+  console.info('Deleting attachment ' + attachmentKey + ' from expense ' + expenseKey);
+
+  let options = {
+    method: 'DELETE',
+    url: BASE_URL + `/rest/expenses/${expenseKey}/attachments/${attachmentKey}`,
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
+
+  console.info('Sending delete call');
+  let resp = await axios(options);
+  console.info('Delete success');
+  return resp.status === 200;
 }
 
 // |----------------------------------------------------|
