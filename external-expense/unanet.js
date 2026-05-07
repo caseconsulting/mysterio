@@ -1,25 +1,3 @@
-
-/**
- * Status mapping:
- *     UNANET         PORTAL
- * INUSE       ->  CREATED
- * COMPLETED   ->  CREATED
- * SUBMITTED*  ->  CREATED
- * APPROVING   ->  APPROVED
- * DENIED      ->  RETURNED
- * EXTRACTED   ->  REIMBURSED
- * LOCKED*     ->  REIMBURSED
- * 
- * Not use:
- * REQUEST_SUBMITTED  ->  
- * PENDING_REVIEW     ->  
- * PREAPPROVING       ->  
- * DISAPPROVED        ->  
- * REQUESTING         ->  
- * PREAPPROVED        ->  
- * 
- */
-
 // utils
 var fs = require('fs');
 const axios = require('axios');
@@ -832,11 +810,16 @@ async function getUnanetPersonKey(employeeNumber) {
  */
 async function createUnanetExpense(portalExpense) {
   console.info('Creating Unanet expense for Portal expense ' + portalExpense.id);
+  let missing;
+  // check portal expense has required info
+  missing = missingAttrs(portalExpense, ['purchaseDate', 'cost', 'id'], 'Portal expense');
+  if (missing) throw new Error(missing);
   // company card vs employee paid
-  let paymentMethod = portalExpense.companyCard ? COMPANY_CARD_KEY : EMPLOYEE_PAY_KEY;
+  let paymentMethod = portalExpense.companyCard?.used ? COMPANY_CARD_KEY : EMPLOYEE_PAY_KEY;
   // get expense type
   let expenseType = await getPortalExpenseType(portalExpense.expenseTypeId);
-  if (!expenseType?.unanetExpenseType) throw new Error(`No Unanet Expense Type associated with Portal Expense Type ${expenseType.budgetName}`)
+  missing = missingAttrs(expenseType, ['unanetExpenseType', 'budgetName', 'unanetProject'], 'Portal expense type');
+  if (missing) throw new Error(missing);
   // get employee Unanet key
   let { employeeNumber } = await getEmployeeAttrFromDb(portalExpense.employeeId, 'employeeNumber');
   let employeeKey = await getUnanetPersonKey(employeeNumber);
@@ -854,7 +837,10 @@ async function createUnanetExpense(portalExpense) {
         taskKey
       }
     ],
-    voucherType: "EXPENSE_REPORT"
+    voucherType: "EXPENSE_REPORT",
+
+    // Unused but could be added:
+    // location: '', // Not sure if this is eg "Virginia" or eg "Home Depot"
   };
 
   // build details
@@ -866,7 +852,29 @@ async function createUnanetExpense(portalExpense) {
     expenseAmount: Number(portalExpense.cost),
     exchangeRate: 1, // USD -> USD
     transactionCurrency: USD_CODE,
-    comments: portalExpense.humandId ?? undefined
+    comments: portalExpense.humanId ?? 'No human ID',
+    
+    // Unused but could be added:
+    // summary: '', // Finance has requested to keep this reserved for their own use
+    // "parentKey": 1, // I guess details can have a heirarchy
+    // "projectAllocationKey": 1, // I think used if multiple projects share/split the expense
+    // "vendorKey": 1, // I think used if stores are kept track of in Unanet, which we don't currently do
+    // "vendorName": "string", // same as above
+    // "receiptIncluded": true, // Not used here, receipts uploaded later and this is auto-set
+    // "noReceiptReason": "string", // Not used, if receipt is required then it is uploaded later
+    // "projectTypeKey": 1, // Not used, unsure what it does
+    // "expenseVATAmount": 100.99, // I think used for international expenses that we don't have
+    // "vatAmount": 100.99, // same as above
+    // "vatLocationKey": 1, // same as above
+    // "importedExpenseDataKey": 1, // same as above but international imports
+    // "wizard": { // 'Wizard' is an option on the frontend with below details
+    //   "type": "AIR", // likely other types, run test expense with random characters and see error message for options
+    //   "departureDate": "2021-02-10", // date of travel
+    //   "returnDate": "2021-02-10", // date of return
+    //   "toLocation": "NYC", // likely a list of types, run same test as with 'type'
+    //   "fromLocation": "DEN", // same as above
+    //   "ticketNumber": "12345" // not sure what this is for, not sure if required
+    // }
   }
   
   // create expense report and submit details
@@ -1055,6 +1063,22 @@ async function deleteUnanetAttachment(expenseKey, attachmentKey) {
 // |                       HELPERS                      |
 // |                                                    |
 // |----------------------------------------------------|
+
+/**
+ * Checks objects for required keys and returns error message or what's missing
+ */
+function missingAttrs(obj, required, name = undefined) {
+  // check object existance
+  if (!obj) return name ? `${name} is missing or could not be found` : 'Object is missing or not found';
+  // ensure required is an array
+  if (!Array.isArray(required)) required = [required];
+  // find array of missing keys
+  let missing = required.filter(key => !(key in obj));
+  // build and return message, or false if nothing is missing
+  let prefix = name ? `${name} is missing` : 'Missing';
+  if (missing.length) return `${prefix} required attributes: ${missing.join(', ')}`;
+  return false;
+}
 
 /**
  * Converts a file (eg. image) into base64
