@@ -66,9 +66,9 @@ async function handler(event) {
       case 'getExpenseType':
         body = await getUnanetExpenseType(params?.keys);
         break;
-      // gets all projects
+      // gets all projects with tasks
       case 'getProjects':
-        body = await getUnanetProjects();
+        body = await getUnanetProjects(undefined, true);
         break;
       // gets specific projects
       case 'getProject':
@@ -479,7 +479,7 @@ async function getUnanetExpenseTypes(keys) {
 /**
  * Gets all projects for mapping to Portal expense types
  */
-async function getUnanetProjects(keys) {
+async function getUnanetProjects(keys, includeTasks = false) {
   console.info('Getting Unanet projects');
   if (keys && !Array.isArray(keys)) keys = [keys];
 
@@ -510,8 +510,38 @@ async function getUnanetProjects(keys) {
     })
   }
 
-  // return array of projects
-  console.info('Map success, returning');
+  // return now if not getting tasks
+  if (!includeTasks) {
+    console.info('Mapping succeeded. Tasks not included in run, returning projects')
+    return projects;
+  }
+
+  // fetch tasks and add them to projects
+  console.info('Mapping success, fetching tasks...');
+  let base = {
+    method: 'GET',
+    url: BASE_URL + '/rest/projects/',
+    params: { page: 1, pageSize: 2000 }, // get all in one query
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
+  let promises = [];
+  for (let p of projects) promises.push(axios({ ...base, url: base.url + p.key + '/tasks' }));
+  let resps = await Promise.allSettled(promises); // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/allSettled
+  resps = resps.map(r => r.status === 'fulfilled' ? r.value.data : { items: [] });
+
+  // map into projects
+  console.info('Fetched tasks, mapping into useful format...');
+  for (let i in projects) {
+    let proj = projects[i];
+    let resp = resps[i];
+    proj.tasks = [];
+    for (let t of resp.items) {
+      if (!t.active) continue;
+      proj.tasks.push({ key: t.key, name: t.name })
+    }
+  }
+
+  console.info('Mapping complete, returning projects with tasks')
   return projects;
 }
 
