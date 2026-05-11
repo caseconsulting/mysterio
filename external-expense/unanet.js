@@ -846,15 +846,14 @@ async function createUnanetExpense(portalExpense) {
   if (missing) throw new Error(missing);
   // company card vs employee paid
   let paymentMethod = portalExpense.companyCard?.used ? COMPANY_CARD_KEY : EMPLOYEE_PAY_KEY;
-  // get expense type
+  // get expense type and task keys
   let expenseType = await getPortalExpenseType(portalExpense.expenseTypeId);
   missing = missingAttrs(expenseType, ['unanetExpenseType', 'budgetName', 'unanetProject'], 'Portal expense type');
   if (missing) throw new Error(missing);
+  let taskKey = expenseType.unanetTask; // not required, so no check
   // get employee Unanet key
   let { employeeNumber } = await getEmployeeAttrFromDb(portalExpense.employeeId, 'employeeNumber');
   let employeeKey = await getUnanetPersonKey(employeeNumber);
-  // task key is only set for 'Team Leads'
-  let taskKey = expenseType.budgetName.toLowerCase().includes('team lead') ? TEAM_LEADS_KEY : undefined;
 
   // build expense (report)
   console.info('Building expense and details...');
