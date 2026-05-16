@@ -7,7 +7,7 @@
     "@aws-sdk/client-lambda": "3.988.0",
     "@aws-sdk/client-sns": "3.988.0",
     "@aws-sdk/client-ssm": "3.988.0",
-    "axios": "1.13.5",
+    "axios": "1.15.2",
     "dayjs": "1.11.19",
     "lodash": "4.17.23",
     "qs": "6.14.2",
