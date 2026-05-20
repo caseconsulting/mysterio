@@ -14,6 +14,12 @@ Parameters:
       - test
       - prod
 
+Conditions:
+  ProdDeployment:
+    Fn::Equals:
+      - !Ref Stage
+      - "prod"
+
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
   Function:
@@ -167,6 +173,85 @@ Resources:
                 - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/Unanet/login
                 - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/TSheets/accessToken
                 - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/ADP/*
+        - Statement:
+            - Action:
+                - lambda:InvokeFunction
+                - lambda:InvokeAsync
+              Effect: Allow
+              Resource: '*'
+        - Statement:
+            - Action:
+                - kms:Decrypt
+              Effect: Allow
+              Resource: '*'
+        - Statement:
+            - Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Effect: Allow
+              Resource: '*'
+  ExternalExpenseProcessFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Join
+        - ''
+        - - mysterio-external-expense-
+          - !Ref Stage
+      CodeUri: external-expense/
+      Description: Handles external expense processing
+      Handler: app.handler
+      Layers:
+        - !Ref DependenciesLayer
+        - !Ref SharedLayer
+      Runtime: nodejs20.x
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Action:
+                - s3:ListBucket
+                - s3:GetObject
+              Resource:
+                # On bucket itself (s3:___Bucket actions)
+                Fn::If:
+                  - ProdDeployment
+                  - arn:aws:s3:::case-consulting-expense-app-attachments-prod
+                  - !Sub arn:aws:s3:::case-expense-app-attachments-${Stage}
+                # On items in bucket (s3:___Object actions)
+                Fn::If:
+                  - ProdDeployment
+                  - arn:aws:s3:::case-consulting-expense-app-attachments-prod/*
+                  - !Sub arn:aws:s3:::case-expense-app-attachments-${Stage}/*
+              Effect: Allow
+        - Statement:
+            - Action:
+                - dynamodb:Scan
+                - dynamodb:Query
+                - dynamodb:UpdateItem
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-employees
+        - Statement:
+            - Action:
+                - dynamodb:Scan
+                - dynamodb:Query
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-expense-types
+        - Statement:
+            - Action:
+                - dynamodb:Scan
+                - dynamodb:Query
+                - dynamodb:UpdateItem
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Stage}-expenses
+        - Statement:
+            - Action:
+                - ssm:GetParameter*
+              Effect: Allow
+              Resource:
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/Unanet/login
         - Statement:
             - Action:
                 - lambda:InvokeFunction
